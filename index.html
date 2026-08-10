@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>Fitness Tracker</title>
+
+  <meta name="theme-color" content="#0d0d0d" />
+  <meta name="description" content="Diario personal de entrenamiento y seguimiento de progreso físico" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Fitness" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="icon" href="icons/icon-32.png" />
+
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script src="js/lib/dexie.min.js"></script>
+  <script src="js/lib/chart.umd.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => console.error('SW error', err));
+      });
+    }
+  </script>
+</body>
+</html>

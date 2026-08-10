@@ -1,0 +1,124 @@
+/* Bloque "última sesión" en el registro de series */
+.last-session {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.last-session .last-session-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-bottom: var(--space-2);
+}
+.last-session-set {
+  display: flex;
+  gap: var(--space-3);
+  font-size: 15px;
+  padding: 3px 0;
+  color: var(--text);
+}
+.last-session-set .set-idx { color: var(--text-faint); width: 22px; }
+
+/* Filas de series editables */
+.set-row {
+  display: grid;
+  grid-template-columns: 24px 1fr 1fr 64px 32px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.set-row:last-child { border-bottom: none; }
+.set-row .set-idx { color: var(--text-faint); font-size: 14px; text-align: center; }
+.set-row input { text-align: center; padding: 10px 4px; }
+.set-row .set-remove {
+  color: var(--text-faint);
+  font-size: 18px;
+  width: 100%;
+  text-align: center;
+}
+
+.set-headers {
+  display: grid;
+  grid-template-columns: 24px 1fr 1fr 64px 32px;
+  gap: var(--space-2);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding-bottom: 4px;
+}
+
+/* Tarjeta de ejercicio dentro de un entrenamiento */
+.exercise-card { margin-bottom: var(--space-4); }
+.exercise-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+.exercise-card-header h3 { font-size: 17px; }
+
+/* Avisos de progresión */
+.insight {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  margin-bottom: var(--space-2);
+}
+.insight-good { background: rgba(57,255,136,0.08); }
+.insight-warn { background: rgba(255,176,32,0.08); }
+
+/* Tarjetas de estadística (dashboard, detalle ejercicio) */
+.stat-tile {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+.stat-tile .stat-label { font-size: 12px; color: var(--text-dim); margin-bottom: 2px; }
+.stat-tile .stat-value { font-size: 22px; font-weight: 700; }
+.stat-tile .stat-sub { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+
+/* Selector de periodo (chips) */
+.period-selector {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: 2px;
+  margin-bottom: var(--space-3);
+}
+.period-chip {
+  white-space: nowrap;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.period-chip.active { background: var(--accent); color: #06170c; border-color: var(--accent); }
+
+.chart-container { position: relative; height: 220px; margin-top: var(--space-2); }
+
+/* Filas de checkbox para selección de datos IA */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.checkbox-row:last-child { border-bottom: none; }
+.checkbox-row input[type="checkbox"] { width: 22px; height: 22px; }
+
+.workout-list-item { padding: var(--space-3); }
+.workout-list-item .row + .row { margin-top: 6px; }
