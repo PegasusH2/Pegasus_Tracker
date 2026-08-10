@@ -7,7 +7,7 @@ export async function renderWorkoutNew(mount) {
   const defaultName = `Entrenamiento ${formatDate(today)}`;
 
   mount.innerHTML = `
-    <h1 style="font-size:22px; margin-bottom:16px;">Nuevo entrenamiento</h1>
+    <h1 class="type-title" style="margin-bottom:24px;">Nuevo entrenamiento</h1>
     <div class="field">
       <label class="label">Nombre</label>
       <input type="text" id="w-name" value="${defaultName}" />

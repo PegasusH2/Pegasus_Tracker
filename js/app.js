@@ -4,17 +4,19 @@ import { renderExerciseDetail } from './views/exercise-detail.js';
 import { renderWorkoutNew } from './views/workout-new.js';
 import { renderWorkoutSession } from './views/workout-session.js';
 import { renderWorkoutHistory } from './views/workout-history.js';
+import { renderTemplateDetail } from './views/templates.js';
 import { renderBodyWeight } from './views/bodyweight.js';
 import { renderMeasurements } from './views/measurements.js';
 import { renderSkinfold } from './views/skinfold.js';
 import { renderAiAnalysis } from './views/ai-analysis.js';
 import { renderSettingsBackup } from './views/settings-backup.js';
+import { NAV_ICONS } from './core/ui.js';
 
 const TABS = [
-  { key: 'home', label: 'Inicio', icon: '🏠', path: '/home' },
-  { key: 'entreno', label: 'Entreno', icon: '💪', path: '/entreno' },
-  { key: 'progreso', label: 'Progreso', icon: '📈', path: '/progreso' },
-  { key: 'datos', label: 'Datos', icon: '⚙️', path: '/datos' },
+  { key: 'home', label: 'Inicio', icon: NAV_ICONS.home, path: '/home' },
+  { key: 'entreno', label: 'Entreno', icon: NAV_ICONS.entreno, path: '/entreno' },
+  { key: 'progreso', label: 'Progreso', icon: NAV_ICONS.progreso, path: '/progreso' },
+  { key: 'datos', label: 'Datos', icon: NAV_ICONS.datos, path: '/datos' },
 ];
 
 const ENTRENO_SUBTABS = [
@@ -44,6 +46,7 @@ function matchRoute(segments) {
     if (sub === 'ejercicios') return { view: renderExerciseLibrary, tab: 'entreno', subtab: 'ejercicios' };
     if (sub === 'nuevo') return { view: renderWorkoutNew, tab: 'entreno', subtab: 'entrenamientos' };
     if (sub === 'sesion' && param) return { view: renderWorkoutSession, tab: 'entreno', subtab: 'entrenamientos', params: { workoutId: param } };
+    if (sub === 'plantilla' && param) return { view: renderTemplateDetail, tab: 'entreno', subtab: 'entrenamientos', params: { templateId: param } };
     if (sub === 'ejercicio' && param) return { view: renderExerciseDetail, tab: 'entreno', subtab: 'ejercicios', params: { exerciseId: param } };
   }
 
@@ -75,7 +78,7 @@ function renderBottomNav(activeTab) {
   const nav = document.getElementById('bottom-nav');
   nav.innerHTML = TABS.map((tab) => `
     <a class="nav-item ${tab.key === activeTab ? 'active' : ''}" href="#${tab.path}">
-      <span class="nav-icon">${tab.icon}</span>
+      ${tab.icon}
       <span>${tab.label}</span>
     </a>
   `).join('');
@@ -84,9 +87,9 @@ function renderBottomNav(activeTab) {
 function renderSubtabs(container, subtabs, activeSubtab) {
   if (!subtabs) return;
   const bar = document.createElement('div');
-  bar.className = 'subtabs';
+  bar.className = 'segmented';
   bar.innerHTML = subtabs.map((s) => `
-    <a class="subtab ${s.key === activeSubtab ? 'active' : ''}" href="#${s.path}">${s.label}</a>
+    <a class="seg ${s.key === activeSubtab ? 'active' : ''}" href="#${s.path}">${s.label}</a>
   `).join('');
   container.prepend(bar);
 }
@@ -104,6 +107,7 @@ async function renderRoute() {
   if (match.tab === 'progreso' && match.subtab) renderSubtabs(view, PROGRESO_SUBTABS, match.subtab);
 
   const mount = document.createElement('div');
+  mount.className = 'view-enter';
   view.appendChild(mount);
 
   try {

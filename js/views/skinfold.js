@@ -1,7 +1,7 @@
 import * as repo from '../db/repository.js';
 import { todayISO, formatDate, formatDateShort } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
-import { openSheet } from '../core/ui.js';
+import { openSheet, getChartThemeColors } from '../core/ui.js';
 import { toast, confirmDialog } from '../core/store.js';
 
 let sumChartInstance = null;
@@ -26,32 +26,29 @@ export async function renderSkinfold(mount) {
   const currentSum = sums.length ? sums[sums.length - 1] : null;
 
   mount.innerHTML = `
-    <div class="row" style="margin-bottom:16px;">
-      <button class="btn btn-secondary btn-sm" id="manage-sites">Configurar pliegues</button>
-      <button class="btn btn-primary btn-sm" id="add-entry">+ Nuevo registro</button>
+    <div class="row" style="margin-bottom:var(--space-5);">
+      <button class="btn btn-ghost btn-sm" id="manage-sites" style="padding-left:0;">Configurar pliegues</button>
+      <button class="btn btn-secondary btn-sm" id="add-entry">+ Nuevo registro</button>
     </div>
 
     ${!sites.length ? `<div class="empty-state">Configura primero los pliegues que utilizas con "Configurar pliegues".</div>` : `
-      <div class="card" style="margin-bottom:20px;">
-        <div class="row">
-          <div class="last-session-title">Suma de pliegues</div>
-          <div class="stat-value" style="font-size:20px;">${currentSum ? currentSum.sum + ' mm' : '—'}</div>
+      <div class="stat-hero">
+        <div class="type-caption text-dim">Suma de pliegues</div>
+        <div class="stat-hero-value">
+          <span class="type-hero">${currentSum ? currentSum.sum : '—'}</span>
+          ${currentSum ? '<span class="type-headline text-dim">mm</span>' : ''}
         </div>
-        <div class="text-dim" style="font-size:13px; margin-bottom:8px;">${currentSum ? `${currentSum.count} pliegues · ${formatDate(currentSum.date)}` : 'Sin registros aún'}</div>
-        <div class="chart-container" style="height:180px;"><canvas id="sum-chart"></canvas></div>
+        <div class="type-caption text-faint">${currentSum ? `${currentSum.count} pliegues · ${formatDate(currentSum.date)}` : 'Sin registros aún'}</div>
       </div>
+      <div class="chart-container" style="height:160px; margin-bottom:var(--space-5);"><canvas id="sum-chart"></canvas></div>
 
-      <div class="row" style="margin-bottom:8px;">
-        <div class="last-session-title">Evolución individual</div>
-      </div>
-      <div class="subtabs" id="site-tabs">
+      <div class="section-label">Evolución individual</div>
+      <div class="subtabs" id="site-tabs" style="margin-bottom:var(--space-3);">
         ${sites.map((s) => `<button class="subtab ${s.id === state.selectedSiteId ? 'active' : ''}" data-site="${s.id}">${escapeHtml(s.name)}</button>`).join('')}
       </div>
-      <div class="card" style="margin-bottom:20px;">
-        <div class="chart-container"><canvas id="site-chart"></canvas></div>
-      </div>
+      <div class="chart-container" style="margin-bottom:var(--space-5);"><canvas id="site-chart"></canvas></div>
 
-      <div class="last-session-title" style="margin-bottom:8px;">Historial</div>
+      <div class="section-label">Historial</div>
       <div id="entry-list" class="list"></div>
     `}
   `;
@@ -76,14 +73,15 @@ function renderSumChart(mount, sums) {
   const canvas = mount.querySelector('#sum-chart');
   if (sumChartInstance) sumChartInstance.destroy();
   if (!sums.length) return;
+  const colors = getChartThemeColors();
   sumChartInstance = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
       labels: sums.map((s) => formatDateShort(s.date)),
       datasets: [{
         data: sums.map((s) => s.sum),
-        borderColor: '#39ff88',
-        backgroundColor: 'rgba(57,255,136,0.12)',
+        borderColor: colors.accent,
+        backgroundColor: colors.accentSoft,
         tension: 0.3, fill: true, pointRadius: 3,
       }],
     },
@@ -91,8 +89,8 @@ function renderSumChart(mount, sums) {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#9a9ea5', maxRotation: 0 }, grid: { color: '#2a2c30' } },
-        y: { ticks: { color: '#9a9ea5' }, grid: { color: '#2a2c30' } },
+        x: { ticks: { color: colors.ticks, maxRotation: 0 }, grid: { display: false } },
+        y: { ticks: { color: colors.ticks }, grid: { color: colors.grid } },
       },
     },
   });
@@ -104,14 +102,15 @@ async function renderSiteChart(mount, siteId) {
   if (!siteId) return;
   const entries = await repo.listSkinfoldEntriesBySite(siteId);
   if (!entries.length) return;
+  const colors = getChartThemeColors();
   siteChartInstance = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
       labels: entries.map((e) => formatDateShort(e.date)),
       datasets: [{
         data: entries.map((e) => e.valueMm),
-        borderColor: '#39ff88',
-        backgroundColor: 'rgba(57,255,136,0.12)',
+        borderColor: colors.accent,
+        backgroundColor: colors.accentSoft,
         tension: 0.3, fill: true, pointRadius: 3,
       }],
     },
@@ -119,8 +118,8 @@ async function renderSiteChart(mount, siteId) {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#9a9ea5', maxRotation: 0 }, grid: { color: '#2a2c30' } },
-        y: { ticks: { color: '#9a9ea5' }, grid: { color: '#2a2c30' } },
+        x: { ticks: { color: colors.ticks, maxRotation: 0 }, grid: { display: false } },
+        y: { ticks: { color: colors.ticks }, grid: { color: colors.grid } },
       },
     },
   });
@@ -138,15 +137,15 @@ function renderEntryList(mount, dates, byDate, sites) {
     const sum = entries.reduce((s, e) => s + e.valueMm, 0);
     return `
       <div class="card" data-date="${date}">
-        <div class="row" style="margin-bottom:6px;">
-          <div style="font-weight:600;">${formatDate(date)}</div>
-          <div class="text-dim">Suma: ${sum} mm</div>
+        <div class="row" style="margin-bottom:8px;">
+          <div class="type-body" style="font-weight:600;">${formatDate(date)}</div>
+          <div class="type-caption text-faint">Suma: ${sum} mm</div>
         </div>
         ${entries.map((e) => {
           const site = sites.find((s) => s.id === e.siteId);
-          return `<div class="row" style="font-size:14px; padding:2px 0;">
+          return `<div class="row" style="font-size:14px; padding:4px 0;">
             <span class="text-dim">${escapeHtml(site?.name || '—')}</span>
-            <span>${e.valueMm} mm <button class="btn btn-ghost btn-sm sf-delete" data-id="${e.id}">✕</button></span>
+            <span style="display:flex; align-items:center; gap:6px;">${e.valueMm} mm <button class="icon-btn sf-delete" data-id="${e.id}" style="width:26px;height:26px;font-size:13px;">✕</button></span>
           </div>`;
         }).join('')}
       </div>
@@ -164,8 +163,8 @@ function renderEntryList(mount, dates, byDate, sites) {
 
 function openSitesManager(mount) {
   openSheet(`
-    <h3 style="margin-bottom:16px;">Pliegues configurados</h3>
-    <div id="sites-list" class="list" style="margin-bottom:16px;"></div>
+    <h3 class="type-headline" style="margin-bottom:20px;">Pliegues configurados</h3>
+    <div id="sites-list" class="list" style="margin-bottom:var(--space-4);"></div>
     <div class="field">
       <label class="label">Nuevo pliegue</label>
       <input type="text" id="new-site-name" placeholder="Ej. Abdominal" />
@@ -175,12 +174,14 @@ function openSitesManager(mount) {
     onMount: async (sheet, close) => {
       async function refresh() {
         const sites = await repo.listSkinfoldSites();
-        sheet.querySelector('#sites-list').innerHTML = sites.map((s) => `
-          <div class="row" data-id="${s.id}">
-            <span>${escapeHtml(s.name)}</span>
-            <button class="btn btn-danger btn-sm site-delete">Eliminar</button>
-          </div>
-        `).join('') || '<div class="text-dim">Sin pliegues configurados.</div>';
+        sheet.querySelector('#sites-list').innerHTML = sites.length
+          ? `<div class="grouped-list">${sites.map((s) => `
+              <div class="grouped-row" data-id="${s.id}">
+                <span class="type-body">${escapeHtml(s.name)}</span>
+                <button class="icon-btn site-delete" aria-label="Eliminar">✕</button>
+              </div>
+            `).join('')}</div>`
+          : '<div class="type-body text-dim">Sin pliegues configurados.</div>';
         sheet.querySelectorAll('.site-delete').forEach((btn) => {
           btn.addEventListener('click', async () => {
             if (!confirmDialog('¿Eliminar este pliegue y su historial?')) return;
@@ -206,7 +207,7 @@ function openSitesManager(mount) {
 
 function openEntryForm(mount, sites) {
   openSheet(`
-    <h3 style="margin-bottom:16px;">Nuevo registro de pliegues</h3>
+    <h3 class="type-headline" style="margin-bottom:20px;">Nuevo registro de pliegues</h3>
     <div class="field">
       <label class="label">Fecha</label>
       <input type="date" id="f-date" value="${todayISO()}" />

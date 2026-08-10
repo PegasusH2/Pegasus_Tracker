@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fitness-tracker-v1';
+const CACHE_VERSION = 'fitness-tracker-v4';
 
 const PRECACHE_URLS = [
   './',
@@ -11,6 +11,9 @@ const PRECACHE_URLS = [
   './js/lib/chart.umd.min.js',
   './js/app.js',
   './js/core/store.js',
+  './js/core/ui.js',
+  './js/core/format.js',
+  './js/core/escape.js',
   './js/core/progression.js',
   './js/core/stats.js',
   './js/db/schema.js',
@@ -21,6 +24,7 @@ const PRECACHE_URLS = [
   './js/views/workout-new.js',
   './js/views/workout-session.js',
   './js/views/workout-history.js',
+  './js/views/templates.js',
   './js/views/bodyweight.js',
   './js/views/measurements.js',
   './js/views/skinfold.js',

@@ -16,7 +16,25 @@ db.version(1).stores({
   settings: 'key',
 });
 
-export const SCHEMA_VERSION = 1;
+// v2: plantillas de entrenamiento (Días/Rutinas) reutilizables. Migración
+// aditiva — no borra ni recrea nada; los workouts existentes simplemente
+// quedan sin templateId (entrenamientos libres).
+db.version(2).stores({
+  exercises: 'id, name, muscleGroup, archived',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+});
+
+export const SCHEMA_VERSION = 2;
 
 export function newId() {
   return crypto.randomUUID();

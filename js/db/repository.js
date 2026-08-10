@@ -84,14 +84,43 @@ export async function getWorkoutExerciseCount(workoutId) {
   return db.workoutExercises.where('workoutId').equals(workoutId).count();
 }
 
+// Nº total de series registradas en entrenamientos cuya fecha cae en [fromISO, toISO].
+export async function countSetsInRange(fromISO, toISO) {
+  const workouts = (await db.workouts.toArray()).filter((w) => w.date >= fromISO && w.date <= toISO);
+  let count = 0;
+  for (const w of workouts) {
+    const wes = await db.workoutExercises.where('workoutId').equals(w.id).toArray();
+    for (const we of wes) {
+      count += await db.sets.where('workoutExerciseId').equals(we.id).count();
+    }
+  }
+  return count;
+}
+
 // ---------- Ejercicios dentro de un entrenamiento ----------
 
-export async function addExerciseToWorkout(workoutId, exerciseId) {
+// targets (opcional): { targetReps, targetRir, targetRestSeconds } — copia
+// congelada del objetivo de la plantilla en el momento de crear la sesión.
+// Editar la plantilla después no cambia estos valores ya copiados.
+export async function addExerciseToWorkout(workoutId, exerciseId, targets = {}) {
   const existing = await db.workoutExercises.where('workoutId').equals(workoutId).toArray();
   const order = existing.length;
-  const we = { id: newId(), workoutId, exerciseId, order, notes: '' };
+  const we = {
+    id: newId(),
+    workoutId,
+    exerciseId,
+    order,
+    notes: '',
+    targetReps: targets.targetReps ?? null,
+    targetRir: targets.targetRir ?? null,
+    targetRestSeconds: targets.targetRestSeconds ?? null,
+  };
   await db.workoutExercises.add(we);
   return we;
+}
+
+export async function getWorkoutExercise(id) {
+  return db.workoutExercises.get(id);
 }
 
 export async function removeExerciseFromWorkout(workoutExerciseId) {
@@ -129,6 +158,137 @@ export async function repeatWorkout(oldWorkoutId, { name, date }) {
     const we = await addExerciseToWorkout(workout.id, oldWe.exerciseId);
     for (let i = 0; i < oldWe.sets.length; i++) {
       await addSet(we.id, {});
+    }
+  }
+  return workout;
+}
+
+// ---------- Plantillas de entrenamiento (Días/Rutinas) ----------
+// Una plantilla define QUÉ ejercicios tiene un día y CUÁNTAS series/objetivos
+// se planean. Nunca se modifica al crear o editar sesiones — startWorkoutFromTemplate
+// copia sus datos a una sesión nueva e independiente.
+
+export async function listTemplates() {
+  const items = await db.templates.toArray();
+  return items.sort((a, b) => a.order - b.order);
+}
+
+export async function getTemplate(id) {
+  return db.templates.get(id);
+}
+
+export async function createTemplate({ name, icon }) {
+  const existing = await db.templates.toArray();
+  const template = {
+    id: newId(),
+    name: name.trim(),
+    icon: icon || '💪',
+    order: existing.length,
+    createdAt: new Date().toISOString(),
+  };
+  await db.templates.add(template);
+  return template;
+}
+
+export async function updateTemplate(id, changes) {
+  await db.templates.update(id, changes);
+}
+
+export async function deleteTemplate(id) {
+  const tes = await db.templateExercises.where('templateId').equals(id).toArray();
+  await db.templateExercises.bulkDelete(tes.map((t) => t.id));
+  await db.templates.delete(id);
+}
+
+// Ejercicios de una plantilla, ordenados, con la ficha del ejercicio incluida.
+export async function getTemplateExercises(templateId) {
+  const items = (await db.templateExercises.where('templateId').equals(templateId).toArray())
+    .sort((a, b) => a.order - b.order);
+  const result = [];
+  for (const te of items) {
+    const exercise = await db.exercises.get(te.exerciseId);
+    result.push({ ...te, exercise });
+  }
+  return result;
+}
+
+export async function getTemplateSummary(templateId) {
+  const items = await db.templateExercises.where('templateId').equals(templateId).toArray();
+  return {
+    exerciseCount: items.length,
+    totalSets: items.reduce((sum, i) => sum + (i.targetSets || 0), 0),
+  };
+}
+
+export async function addTemplateExercise(templateId, exerciseId, values = {}) {
+  const existing = await db.templateExercises.where('templateId').equals(templateId).toArray();
+  const te = {
+    id: newId(),
+    templateId,
+    exerciseId,
+    order: existing.length,
+    targetSets: values.targetSets ?? 3,
+    targetReps: values.targetReps ?? null,
+    targetRir: values.targetRir ?? null,
+    targetRestSeconds: values.targetRestSeconds ?? null,
+    notes: values.notes ?? '',
+  };
+  await db.templateExercises.add(te);
+  return te;
+}
+
+export async function updateTemplateExercise(id, changes) {
+  await db.templateExercises.update(id, changes);
+}
+
+export async function removeTemplateExercise(id) {
+  await db.templateExercises.delete(id);
+}
+
+// direction: -1 (subir) | 1 (bajar)
+export async function moveTemplateExercise(templateId, id, direction) {
+  const items = await getTemplateExercises(templateId);
+  const idx = items.findIndex((i) => i.id === id);
+  const swapIdx = idx + direction;
+  if (idx === -1 || swapIdx < 0 || swapIdx >= items.length) return;
+  const a = items[idx];
+  const b = items[swapIdx];
+  await db.templateExercises.update(a.id, { order: b.order });
+  await db.templateExercises.update(b.id, { order: a.order });
+}
+
+export async function getLastWorkoutForTemplate(templateId) {
+  const workouts = await db.workouts.where('templateId').equals(templateId).toArray();
+  if (!workouts.length) return null;
+  return workouts.sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+}
+
+// Crea una sesión nueva a partir de una plantilla: copia ejercicios, orden y
+// número de series previsto, y prellena peso/reps con la última sesión de cada
+// ejercicio (igual que "+ Añadir serie"). El RIR nunca se prellena. La
+// plantilla no se modifica; la sesión creada es completamente independiente.
+export async function startWorkoutFromTemplate(templateId, { date }) {
+  const template = await getTemplate(templateId);
+  if (!template) throw new Error('Plantilla no encontrada');
+  const templateExercises = await getTemplateExercises(templateId);
+
+  const workout = await createWorkout({ name: template.name, date });
+  await db.workouts.update(workout.id, { templateId });
+
+  for (const te of templateExercises) {
+    const we = await addExerciseToWorkout(workout.id, te.exerciseId, {
+      targetReps: te.targetReps,
+      targetRir: te.targetRir,
+      targetRestSeconds: te.targetRestSeconds,
+    });
+    const lastEntry = await getLastSessionForExercise(te.exerciseId);
+    const lastSets = lastEntry?.sets ?? [];
+    const setCount = Math.max(1, te.targetSets || 1);
+    for (let i = 0; i < setCount; i++) {
+      await addSet(we.id, {
+        weight: lastSets[i]?.weight ?? null,
+        reps: lastSets[i]?.reps ?? te.targetReps ?? null,
+      });
     }
   }
   return workout;
@@ -310,6 +470,7 @@ const TABLES = [
   'exercises', 'workouts', 'workoutExercises', 'sets',
   'bodyWeight', 'measurementTypes', 'measurements',
   'skinfoldSites', 'skinfoldEntries', 'settings',
+  'templates', 'templateExercises',
 ];
 
 export async function exportAllData() {
@@ -318,7 +479,7 @@ export async function exportAllData() {
     data[table] = await db[table].toArray();
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     data,
   };

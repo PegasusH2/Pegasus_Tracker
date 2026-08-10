@@ -1,8 +1,9 @@
 import * as repo from '../db/repository.js';
 import { compareSessions } from '../core/progression.js';
+import { trendSeries } from '../core/stats.js';
 import { formatDate, relativeDays } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
-import { openSheet } from '../core/ui.js';
+import { openSheet, openExercisePickerSheet, renderInsightCallout, getChartThemeColors, CHECK_ICON } from '../core/ui.js';
 import { toast, confirmDialog } from '../core/store.js';
 import { navigate } from '../app.js';
 
@@ -15,22 +16,22 @@ export async function renderWorkoutSession(mount, { workoutId }) {
   const { workout, exercises } = detail;
 
   mount.innerHTML = `
-    <div class="row" style="margin-bottom:4px;">
-      <h1 style="font-size:20px;" id="w-title">${escapeHtml(workout.name)}</h1>
+    <div class="row" style="margin-bottom:2px; align-items:flex-start;">
+      <h1 class="type-title" id="w-title">${escapeHtml(workout.name)}</h1>
       <button class="btn btn-ghost btn-sm" id="w-edit">Editar</button>
     </div>
-    <div class="text-dim" style="margin-bottom:16px;">${formatDate(workout.date)}${workout.completed ? ' · <span class="text-good">Finalizado</span>' : ''}</div>
+    <div class="type-caption text-dim" style="margin-bottom:24px;">${formatDate(workout.date)}${workout.completed ? ' · <span class="text-good">Finalizado</span>' : ''}</div>
 
     <div id="exercise-cards" class="stack"></div>
 
-    <button class="btn btn-secondary btn-block" id="add-exercise" style="margin-top:8px;">+ Añadir ejercicio</button>
+    <button class="btn btn-secondary btn-block" id="add-exercise" style="margin-top:4px;">+ Añadir ejercicio</button>
 
-    <div class="field" style="margin-top:20px;">
+    <div class="field" style="margin-top:28px;">
       <label class="label">Notas del entrenamiento</label>
-      <textarea id="w-notes" rows="2">${escapeHtml(workout.notes || '')}</textarea>
+      <textarea id="w-notes" rows="2" placeholder="Opcional">${escapeHtml(workout.notes || '')}</textarea>
     </div>
 
-    <button class="btn ${workout.completed ? 'btn-secondary' : 'btn-primary'} btn-block" id="w-finish" style="margin-top:8px;">
+    <button class="btn ${workout.completed ? 'btn-secondary' : 'btn-primary'} btn-block" id="w-finish">
       ${workout.completed ? 'Reabrir entrenamiento' : 'Finalizar entrenamiento'}
     </button>
   `;
@@ -62,7 +63,7 @@ export async function renderWorkoutSession(mount, { workoutId }) {
 
 function openWorkoutEditSheet(mount, workout) {
   openSheet(`
-    <h3 style="margin-bottom:16px;">Editar entrenamiento</h3>
+    <h3 class="type-headline" style="margin-bottom:20px;">Editar entrenamiento</h3>
     <div class="field">
       <label class="label">Nombre</label>
       <input type="text" id="e-name" value="${escapeHtml(workout.name)}" />
@@ -72,7 +73,7 @@ function openWorkoutEditSheet(mount, workout) {
       <input type="date" id="e-date" value="${workout.date}" />
     </div>
     <button class="btn btn-primary btn-block" id="e-save">Guardar</button>
-    <button class="btn btn-danger btn-block" id="e-delete" style="margin-top:8px;">Eliminar entrenamiento</button>
+    <button class="btn btn-ghost-danger btn-block" id="e-delete" style="margin-top:8px;">Eliminar entrenamiento</button>
   `, {
     onMount: (sheet, close) => {
       sheet.querySelector('#e-save').addEventListener('click', async () => {
@@ -93,70 +94,17 @@ function openWorkoutEditSheet(mount, workout) {
 }
 
 function openAddExerciseSheet(mount, workoutId) {
-  openSheet(`
-    <h3 style="margin-bottom:16px;">Añadir ejercicio</h3>
-    <input type="search" id="ex-search" placeholder="Buscar ejercicio..." style="margin-bottom:12px;" />
-    <div id="ex-results" class="list"></div>
-    <button class="btn btn-secondary btn-block" id="ex-create-new" style="margin-top:12px;">+ Crear ejercicio nuevo</button>
-  `, {
-    onMount: async (sheet, close) => {
-      async function renderResults(search) {
-        const results = await repo.listExercises({ search });
-        const box = sheet.querySelector('#ex-results');
-        if (!results.length) {
-          box.innerHTML = `<div class="empty-state">Sin resultados.</div>`;
-          return;
-        }
-        box.innerHTML = results.map((ex) => `
-          <div class="card row" data-id="${ex.id}" style="padding:12px;">
-            <span>${escapeHtml(ex.name)}</span>
-            <button class="btn btn-primary btn-sm">Añadir</button>
-          </div>
-        `).join('');
-        box.querySelectorAll('[data-id]').forEach((row) => {
-          row.querySelector('button').addEventListener('click', async () => {
-            await repo.addExerciseToWorkout(workoutId, row.dataset.id);
-            close();
-            await renderWorkoutSession(mount, { workoutId });
-          });
-        });
-      }
-      sheet.querySelector('#ex-search').addEventListener('input', (e) => renderResults(e.target.value));
-      sheet.querySelector('#ex-create-new').addEventListener('click', () => {
-        const name = sheet.querySelector('#ex-search').value.trim();
-        openSheet(`
-          <h3 style="margin-bottom:16px;">Nuevo ejercicio</h3>
-          <div class="field">
-            <label class="label">Nombre</label>
-            <input type="text" id="new-ex-name" value="${escapeHtml(name)}" autofocus />
-          </div>
-          <div class="field">
-            <label class="label">Grupo muscular (opcional)</label>
-            <input type="text" id="new-ex-muscle" />
-          </div>
-          <button class="btn btn-primary btn-block" id="new-ex-save">Crear y añadir</button>
-        `, {
-          onMount: (sheet2, close2) => {
-            sheet2.querySelector('#new-ex-save').addEventListener('click', async () => {
-              const n = sheet2.querySelector('#new-ex-name').value.trim();
-              if (!n) { toast('El nombre es obligatorio'); return; }
-              const muscleGroup = sheet2.querySelector('#new-ex-muscle').value.trim();
-              const ex = await repo.createExercise({ name: n, muscleGroup });
-              await repo.addExerciseToWorkout(workoutId, ex.id);
-              close2();
-              close();
-              await renderWorkoutSession(mount, { workoutId });
-            });
-          },
-        });
-      });
-      await renderResults('');
+  openExercisePickerSheet({
+    onSelect: async (exercise) => {
+      await repo.addExerciseToWorkout(workoutId, exercise.id);
+      await renderWorkoutSession(mount, { workoutId });
     },
   });
 }
 
 async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId) {
   const exercise = await repo.getExercise(exerciseId);
+  const workoutExercise = await repo.getWorkoutExercise(workoutExerciseId);
   const currentSets = await repo.getSetsForWorkoutExercise(workoutExerciseId);
   const lastEntry = await repo.getLastSessionForExercise(exerciseId, { excludeWorkoutId: workout.id });
   const lastSets = lastEntry?.sets ?? [];
@@ -166,43 +114,60 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId) 
     ? compareSessions(currentSets, lastSets, { compareVolume: currentSets.length >= lastSets.length })
     : null;
 
+  const history = await repo.getExerciseHistory(exerciseId);
+  const sparkValues = trendSeries(history, 'topWeight').map((p) => p.value).filter((v) => v != null);
+
   card.innerHTML = `
     <div class="exercise-card-header">
       <h3 class="ex-title-link" style="cursor:pointer;">${escapeHtml(exercise.name)}</h3>
-      <button class="btn btn-ghost btn-sm remove-exercise">Quitar</button>
+      <button class="btn btn-ghost-danger btn-sm remove-exercise">Quitar</button>
     </div>
+    ${targetCaption(workoutExercise)}
 
     ${lastEntry ? `
       <div class="last-session">
-        <div class="last-session-title">Última sesión · ${relativeDays(lastEntry.workout.date)}</div>
+        <div class="section-label">Última sesión · ${relativeDays(lastEntry.workout.date)}</div>
         ${lastSets.map((s) => `
           <div class="last-session-set">
-            <span class="set-idx">S${s.setNumber}</span>
-            <span>${s.weight ?? '—'}kg × ${s.reps ?? '—'}</span>
-            <span class="text-dim">${s.rir != null ? `RIR ${s.rir}` : ''}</span>
+            <span class="set-idx num">${s.setNumber}</span>
+            <span class="num">${s.weight ?? '—'} kg × ${s.reps ?? '—'}</span>
+            <span class="text-faint">${s.rir != null ? `RIR ${s.rir}` : ''}</span>
           </div>
-        `).join('') || '<span class="text-dim">Sin series registradas</span>'}
+        `).join('') || '<span class="last-session-empty">Sin series registradas</span>'}
       </div>
-    ` : `<div class="text-faint" style="margin-bottom:12px; font-size:13px;">Primera vez que registras este ejercicio.</div>`}
+    ` : `<div class="last-session-empty" style="margin-bottom:16px; display:block;">Primera vez que registras este ejercicio.</div>`}
 
-    <div class="last-session-title" style="margin-bottom:6px;">Sesión actual</div>
-    <div class="set-headers"><span></span><span>Peso</span><span>Reps</span><span>RIR</span><span></span></div>
+    <div class="section-label">Hoy</div>
     <div class="sets-list"></div>
-    <button class="btn btn-secondary btn-sm add-set" style="margin-top:8px;">+ Añadir serie</button>
+    <button class="btn btn-secondary btn-sm add-set" style="margin-top:10px;">+ Añadir serie</button>
 
-    <div class="insights-box" style="margin-top:12px;"></div>
+    <div class="insights-box" style="margin-top:14px;"></div>
+    ${sparkValues.length >= 2 ? `<div class="sparkline-container"><canvas class="sparkline-canvas"></canvas></div>` : ''}
   `;
 
   const setsList = card.querySelector('.sets-list');
-  setsList.innerHTML = currentSets.map((s) => `
+  setsList.innerHTML = currentSets.map((s) => {
+    const done = s.weight != null && s.reps != null;
+    return `
     <div class="set-row" data-set-id="${s.id}">
       <span class="set-idx">${s.setNumber}</span>
-      <input type="number" inputmode="decimal" step="0.5" class="input-weight" value="${s.weight ?? ''}" placeholder="kg" />
-      <input type="number" inputmode="numeric" class="input-reps" value="${s.reps ?? ''}" placeholder="reps" />
-      <input type="number" inputmode="numeric" min="0" max="10" class="input-rir" value="${s.rir ?? ''}" placeholder="RIR" />
+      <div class="set-field">
+        <input type="number" inputmode="decimal" step="0.5" class="input-weight" value="${s.weight ?? ''}" placeholder="—" />
+        <span class="set-unit">kg</span>
+      </div>
+      <div class="set-field">
+        <input type="number" inputmode="numeric" class="input-reps" value="${s.reps ?? ''}" placeholder="—" />
+        <span class="set-unit">reps</span>
+      </div>
+      <div class="set-field">
+        <input type="number" inputmode="numeric" min="0" max="10" class="input-rir" value="${s.rir ?? ''}" placeholder="—" />
+        <span class="set-unit">RIR</span>
+      </div>
+      <span class="set-check ${done ? 'done' : ''}">${CHECK_ICON}</span>
       <button class="set-remove">✕</button>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   setsList.querySelectorAll('.set-row').forEach((row) => {
     const setId = row.dataset.setId;
@@ -239,11 +204,51 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId) 
   });
 
   const insightsBox = card.querySelector('.insights-box');
-  if (comparison && comparison.insights.length) {
-    insightsBox.innerHTML = comparison.insights.map((i) => `
-      <div class="insight ${i.level === 'good' ? 'insight-good' : i.level === 'warn' ? 'insight-warn' : ''}">${i.text}</div>
-    `).join('');
-  } else {
-    insightsBox.innerHTML = '';
-  }
+  insightsBox.innerHTML = comparison && comparison.insights.length
+    ? comparison.insights.map(renderInsightCallout).join('')
+    : '';
+
+  const sparkCanvas = card.querySelector('.sparkline-canvas');
+  if (sparkCanvas) renderSparkline(sparkCanvas, sparkValues);
+}
+
+// Objetivo planeado (congelado al crear la sesión desde una plantilla) — solo
+// informativo, nunca se prellena en los campos de la serie salvo las reps.
+function targetCaption(we) {
+  if (!we) return '';
+  const parts = [];
+  if (we.targetReps != null) parts.push(`${we.targetReps} reps`);
+  if (we.targetRir != null) parts.push(`RIR ${we.targetRir}`);
+  if (we.targetRestSeconds != null) parts.push(`${we.targetRestSeconds}s descanso`);
+  if (!parts.length) return '';
+  return `<div class="type-caption text-faint" style="margin-bottom:10px;">Objetivo: ${parts.join(' · ')}</div>`;
+}
+
+function renderSparkline(canvas, values) {
+  const existing = Chart.getChart(canvas);
+  if (existing) existing.destroy();
+  if (values.length < 2) return;
+  const colors = getChartThemeColors();
+  new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: values.map((_, i) => i),
+      datasets: [{
+        data: values,
+        borderColor: colors.accent,
+        backgroundColor: colors.accentSoft,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false } },
+      elements: { point: { radius: 0 } },
+    },
+  });
 }

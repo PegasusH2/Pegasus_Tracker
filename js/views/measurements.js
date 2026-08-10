@@ -1,7 +1,7 @@
 import * as repo from '../db/repository.js';
 import { todayISO, formatDate, formatDateShort } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
-import { openSheet } from '../core/ui.js';
+import { openSheet, getChartThemeColors } from '../core/ui.js';
 import { toast, confirmDialog } from '../core/store.js';
 
 let chartInstance = null;
@@ -16,20 +16,18 @@ export async function renderMeasurements(mount) {
   }
 
   mount.innerHTML = `
-    <div class="row" style="margin-bottom:12px;">
-      <div class="subtabs" id="type-tabs" style="margin:0; flex:1;">
+    <div class="row" style="margin-bottom:var(--space-4); align-items:center;">
+      <div class="subtabs" id="type-tabs" style="flex:1;">
         ${types.map((t) => `<button class="subtab ${t.id === state.selectedTypeId ? 'active' : ''}" data-type="${t.id}">${escapeHtml(t.name)}</button>`).join('')}
       </div>
       <button class="btn btn-ghost btn-sm" id="new-type" style="white-space:nowrap;">+ Tipo</button>
     </div>
 
     ${!types.length ? `<div class="empty-state">Crea tu primer tipo de medida (ej. Cintura, Brazo...) con "+ Tipo".</div>` : `
-      <button class="btn btn-primary btn-block" id="add-measurement" style="margin-bottom:20px;">+ Añadir medida</button>
-      <div class="card" style="margin-bottom:20px;">
-        <div class="chart-container"><canvas id="measure-chart"></canvas></div>
-      </div>
-      <div class="last-session-title" style="margin-bottom:8px;">Historial</div>
-      <div id="measure-list" class="list"></div>
+      <button class="btn btn-secondary btn-block" id="add-measurement" style="margin-bottom:var(--space-5);">+ Añadir medida</button>
+      <div class="chart-container" style="margin-bottom:var(--space-5);"><canvas id="measure-chart"></canvas></div>
+      <div class="section-label">Historial</div>
+      <div id="measure-list"></div>
     `}
   `;
 
@@ -56,15 +54,15 @@ async function renderTypeData(mount, typeId) {
   if (!entries.length) {
     list.innerHTML = `<div class="empty-state">Sin registros todavía para esta medida.</div>`;
   } else {
-    list.innerHTML = entries.map((e) => `
-      <div class="card row" data-id="${e.id}">
+    list.innerHTML = `<div class="grouped-list">${entries.map((e) => `
+      <div class="grouped-row" data-id="${e.id}">
         <div>
-          <div style="font-weight:600;">${e.valueCm} cm</div>
-          <div class="text-dim" style="font-size:13px;">${formatDate(e.date)}${e.notes ? ' · ' + escapeHtml(e.notes) : ''}</div>
+          <div class="type-body num" style="font-weight:600;">${e.valueCm} cm</div>
+          <div class="type-caption text-faint">${formatDate(e.date)}${e.notes ? ' · ' + escapeHtml(e.notes) : ''}</div>
         </div>
-        <button class="btn btn-danger btn-sm m-delete">Eliminar</button>
+        <button class="icon-btn m-delete" aria-label="Eliminar">✕</button>
       </div>
-    `).join('');
+    `).join('')}</div>`;
     list.querySelectorAll('[data-id]').forEach((row) => {
       row.querySelector('.m-delete').addEventListener('click', async () => {
         if (!confirmDialog('¿Eliminar este registro?')) return;
@@ -79,14 +77,15 @@ async function renderTypeData(mount, typeId) {
   if (chartInstance) chartInstance.destroy();
   if (!ascending.length) return;
 
+  const colors = getChartThemeColors();
   chartInstance = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
       labels: ascending.map((e) => formatDateShort(e.date)),
       datasets: [{
         data: ascending.map((e) => e.valueCm),
-        borderColor: '#39ff88',
-        backgroundColor: 'rgba(57,255,136,0.12)',
+        borderColor: colors.accent,
+        backgroundColor: colors.accentSoft,
         tension: 0.3,
         fill: true,
         pointRadius: 3,
@@ -97,8 +96,8 @@ async function renderTypeData(mount, typeId) {
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#9a9ea5', maxRotation: 0 }, grid: { color: '#2a2c30' } },
-        y: { ticks: { color: '#9a9ea5' }, grid: { color: '#2a2c30' } },
+        x: { ticks: { color: colors.ticks, maxRotation: 0 }, grid: { display: false } },
+        y: { ticks: { color: colors.ticks }, grid: { color: colors.grid } },
       },
     },
   });
@@ -106,7 +105,7 @@ async function renderTypeData(mount, typeId) {
 
 function openTypeForm(mount) {
   openSheet(`
-    <h3 style="margin-bottom:16px;">Nuevo tipo de medida</h3>
+    <h3 class="type-headline" style="margin-bottom:20px;">Nuevo tipo de medida</h3>
     <div class="field">
       <label class="label">Nombre</label>
       <input type="text" id="f-name" placeholder="Ej. Cintura" autofocus />
@@ -128,7 +127,7 @@ function openTypeForm(mount) {
 
 function openMeasurementForm(mount, typeId) {
   openSheet(`
-    <h3 style="margin-bottom:16px;">Añadir medida</h3>
+    <h3 class="type-headline" style="margin-bottom:20px;">Añadir medida</h3>
     <div class="field">
       <label class="label">Fecha</label>
       <input type="date" id="f-date" value="${todayISO()}" />
@@ -142,7 +141,7 @@ function openMeasurementForm(mount, typeId) {
       <input type="text" id="f-notes" />
     </div>
     <button class="btn btn-primary btn-block" id="f-save">Guardar</button>
-    <button class="btn btn-secondary btn-block" id="f-delete-type" style="margin-top:16px;">Eliminar este tipo de medida</button>
+    <button class="btn btn-ghost-danger btn-block" id="f-delete-type" style="margin-top:16px;">Eliminar este tipo de medida</button>
   `, {
     onMount: (sheet, close) => {
       sheet.querySelector('#f-save').addEventListener('click', async () => {

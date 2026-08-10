@@ -4,35 +4,37 @@ import { navigate } from '../app.js';
 
 export async function renderSettingsBackup(mount) {
   mount.innerHTML = `
-    <h1 style="font-size:22px; margin-bottom:20px;">Datos / Copia de seguridad</h1>
+    <h1 class="type-title" style="margin-bottom:var(--space-5);">Datos</h1>
 
-    <div class="card" style="margin-bottom:16px;">
-      <div class="last-session-title" style="margin-bottom:8px;">Exportar datos</div>
-      <p class="text-dim" style="font-size:14px; margin-bottom:12px;">
+    <div class="section-label">Copia de seguridad</div>
+    <div class="card" style="margin-bottom:var(--space-4); margin-top:var(--space-2);">
+      <div class="type-headline" style="margin-bottom:6px;">Exportar datos</div>
+      <p class="type-body text-dim" style="margin-bottom:var(--space-4);">
         Descarga un archivo JSON con todos tus entrenamientos, ejercicios, peso, medidas y plicómetro.
         Tus datos nunca salen de tu dispositivo salvo que tú los exportes.
       </p>
       <button class="btn btn-primary btn-block" id="export-btn">Exportar todos los datos</button>
     </div>
 
-    <div class="card" style="margin-bottom:16px;">
-      <div class="last-session-title" style="margin-bottom:8px;">Importar / restaurar datos</div>
-      <p class="text-dim" style="font-size:14px; margin-bottom:12px;">
+    <div class="card" style="margin-bottom:var(--space-4);">
+      <div class="type-headline" style="margin-bottom:6px;">Importar / restaurar datos</div>
+      <p class="type-body text-dim" style="margin-bottom:var(--space-4);">
         Restaura un backup exportado previamente. Esto <strong>sustituye</strong> todos los datos actuales.
       </p>
       <input type="file" accept="application/json" id="import-file" style="display:none;" />
       <button class="btn btn-secondary btn-block" id="import-btn">Seleccionar archivo de backup</button>
     </div>
 
-    <div class="card" style="border-color: var(--danger);">
-      <div class="last-session-title" style="margin-bottom:8px;">Borrar todos los datos</div>
-      <p class="text-dim" style="font-size:14px; margin-bottom:12px;">
+    <div class="section-label">Zona de riesgo</div>
+    <div class="card" style="margin-top:var(--space-2);">
+      <div class="type-headline text-danger" style="margin-bottom:6px;">Borrar todos los datos</div>
+      <p class="type-body text-dim" style="margin-bottom:var(--space-4);">
         Elimina permanentemente todos los entrenamientos, ejercicios, peso, medidas y plicómetro de este dispositivo.
         Esta acción no se puede deshacer.
       </p>
-      <label class="row" style="margin-bottom:12px; cursor:pointer;">
-        <span style="font-size:14px;">Entiendo que esto es irreversible</span>
-        <input type="checkbox" id="confirm-delete-checkbox" style="width:22px; height:22px;" />
+      <label class="row" style="margin-bottom:var(--space-4); cursor:pointer;">
+        <span class="type-body">Entiendo que esto es irreversible</span>
+        <input type="checkbox" id="confirm-delete-checkbox" style="width:24px; height:24px; accent-color:var(--danger);" />
       </label>
       <button class="btn btn-danger btn-block" id="delete-btn" disabled>Borrar todos los datos</button>
     </div>

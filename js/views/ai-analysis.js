@@ -29,13 +29,13 @@ const state = {
 
 export async function renderAiAnalysis(mount) {
   mount.innerHTML = `
-    <h1 style="font-size:22px; margin-bottom:8px;">Análisis IA</h1>
-    <p class="text-dim" style="font-size:14px; margin-bottom:20px;">
+    <h1 class="type-title" style="margin-bottom:8px;">Análisis IA</h1>
+    <p class="type-body text-dim" style="margin-bottom:var(--space-5);">
       El análisis solo se ejecuta cuando tú lo solicitas expresamente. No se envía ningún dato de forma automática ni en segundo plano.
     </p>
 
-    <div class="card" style="margin-bottom:16px;">
-      <div class="last-session-title" style="margin-bottom:10px;">Periodo a analizar</div>
+    <div class="card" style="margin-bottom:var(--space-4);">
+      <div class="section-label" style="margin-bottom:10px;">Periodo a analizar</div>
       <div class="period-selector" id="period-selector">
         ${PERIODS.map((p) => `<button class="period-chip ${p.key === state.period ? 'active' : ''}" data-period="${p.key}">${p.label}</button>`).join('')}
       </div>
@@ -53,19 +53,19 @@ export async function renderAiAnalysis(mount) {
       </div>
     </div>
 
-    <div class="card" style="margin-bottom:16px;">
-      <div class="last-session-title" style="margin-bottom:6px;">Datos a incluir</div>
+    <div class="card" style="margin-bottom:var(--space-4);">
+      <div class="section-label" style="margin-bottom:2px;">Datos a incluir</div>
       ${DATA_OPTIONS.map((o) => `
         <label class="checkbox-row">
+          <span class="type-body">${o.label}</span>
           <input type="checkbox" data-flag="${o.key}" ${state.flags[o.key] ? 'checked' : ''} />
-          <span>${o.label}</span>
         </label>
       `).join('')}
     </div>
 
     <button class="btn btn-primary btn-block" id="show-summary">Ver resumen antes de analizar</button>
 
-    <div id="summary-section" style="margin-top:20px;"></div>
+    <div id="summary-section" style="margin-top:var(--space-5);"></div>
   `;
 
   mount.querySelector('#period-selector').addEventListener('click', (e) => {
@@ -126,13 +126,13 @@ async function renderSummary(mount) {
   const section = mount.querySelector('#summary-section');
   section.innerHTML = `
     <div class="card">
-      <div class="last-session-title" style="margin-bottom:8px;">Estos son los datos que se enviarían para el análisis</div>
-      <div class="text-dim" style="font-size:13px; margin-bottom:10px;">Periodo: ${from} a ${to}</div>
-      <ul style="padding-left:18px; margin-bottom:16px;">
-        ${items.map((i) => `<li style="margin-bottom:4px;">${i}</li>`).join('') || '<li>No has seleccionado ningún dato.</li>'}
+      <div class="section-label" style="margin-bottom:8px;">Estos son los datos que se enviarían para el análisis</div>
+      <div class="type-caption text-faint" style="margin-bottom:12px;">Periodo: ${from} a ${to}</div>
+      <ul style="padding-left:18px; margin-bottom:var(--space-4);">
+        ${items.map((i) => `<li class="type-body" style="margin-bottom:4px;">${i}</li>`).join('') || '<li class="type-body">No has seleccionado ningún dato.</li>'}
       </ul>
       <div class="row">
-        <button class="btn btn-secondary" id="cancel-analysis">Cancelar</button>
+        <button class="btn btn-ghost" id="cancel-analysis">Cancelar</button>
         <button class="btn btn-primary" id="confirm-analysis">Confirmar análisis</button>
       </div>
     </div>

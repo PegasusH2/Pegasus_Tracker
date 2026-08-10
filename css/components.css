@@ -1,124 +1,334 @@
-/* Bloque "última sesión" en el registro de series */
-.last-session {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
-}
-.last-session .last-session-title {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  margin-bottom: var(--space-2);
-}
-.last-session-set {
-  display: flex;
-  gap: var(--space-3);
-  font-size: 15px;
-  padding: 3px 0;
-  color: var(--text);
-}
-.last-session-set .set-idx { color: var(--text-faint); width: 22px; }
-
-/* Filas de series editables */
-.set-row {
-  display: grid;
-  grid-template-columns: 24px 1fr 1fr 64px 32px;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border);
-}
-.set-row:last-child { border-bottom: none; }
-.set-row .set-idx { color: var(--text-faint); font-size: 14px; text-align: center; }
-.set-row input { text-align: center; padding: 10px 4px; }
-.set-row .set-remove {
-  color: var(--text-faint);
-  font-size: 18px;
-  width: 100%;
-  text-align: center;
-}
-
-.set-headers {
-  display: grid;
-  grid-template-columns: 24px 1fr 1fr 64px 32px;
-  gap: var(--space-2);
-  font-size: 11px;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding-bottom: 4px;
-}
-
-/* Tarjeta de ejercicio dentro de un entrenamiento */
-.exercise-card { margin-bottom: var(--space-4); }
-.exercise-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-3);
-}
-.exercise-card-header h3 { font-size: 17px; }
-
-/* Avisos de progresión */
-.insight {
+/* Tabs horizontales de longitud variable (tipos de medida, sitios de pliegue) */
+.subtabs {
   display: flex;
   gap: var(--space-2);
-  align-items: flex-start;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+.subtab {
+  white-space: nowrap;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-secondary);
   font-size: 14px;
-  margin-bottom: var(--space-2);
+  font-weight: 600;
 }
-.insight-good { background: rgba(57,255,136,0.08); }
-.insight-warn { background: rgba(255,176,32,0.08); }
+.subtab.active { background: var(--text); color: var(--bg); }
 
-/* Tarjetas de estadística (dashboard, detalle ejercicio) */
-.stat-tile {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-}
-.stat-tile .stat-label { font-size: 12px; color: var(--text-dim); margin-bottom: 2px; }
-.stat-tile .stat-value { font-size: 22px; font-weight: 700; }
-.stat-tile .stat-sub { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
-
-/* Selector de periodo (chips) */
+/* Selector de periodo (chips desplazables) */
 .period-selector {
   display: flex;
   gap: var(--space-2);
   overflow-x: auto;
   padding-bottom: 2px;
   margin-bottom: var(--space-3);
+  -webkit-overflow-scrolling: touch;
 }
 .period-chip {
   white-space: nowrap;
-  padding: 6px 12px;
-  border-radius: 999px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
   font-size: 13px;
   font-weight: 600;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  color: var(--text-dim);
+  background: var(--surface-2);
+  color: var(--text-secondary);
 }
-.period-chip.active { background: var(--accent); color: #06170c; border-color: var(--accent); }
+.period-chip.active { background: var(--text); color: var(--bg); }
 
-.chart-container { position: relative; height: 220px; margin-top: var(--space-2); }
+/* Encabezado de sección discreto ("ÚLTIMA SESIÓN", "HOY"...) */
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-2);
+}
 
-/* Filas de checkbox para selección de datos IA */
+/* Bloque "última sesión" — referencia discreta, nunca confundir con hoy */
+.last-session {
+  padding: 2px 0 var(--space-4);
+  margin-bottom: var(--space-2);
+  border-bottom: 0.5px solid var(--border);
+}
+.last-session-set {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: 15px;
+  padding: 3px 0;
+  color: var(--text-secondary);
+}
+.last-session-set .set-idx { color: var(--text-tertiary); width: 20px; font-size: 12px; }
+.last-session-empty { color: var(--text-tertiary); font-size: 14px; }
+
+/* Filas de serie — lista deportiva, no tabla */
+.set-row {
+  display: grid;
+  grid-template-columns: 20px 1fr 1fr 1fr 26px 22px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 12px 0;
+  border-bottom: 0.5px solid var(--border);
+}
+.set-row:last-child { border-bottom: none; }
+.set-row .set-idx {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.set-field { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.set-field .set-unit {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.set-row input {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  text-align: center;
+  padding: 0;
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-height: unset;
+}
+.set-row input:focus { box-shadow: none; color: var(--accent); }
+.set-row input::placeholder { color: var(--text-tertiary); font-weight: 400; }
+
+.set-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border);
+  color: transparent;
+}
+.set-check.done { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.set-check svg { width: 12px; height: 12px; }
+
+.set-remove {
+  color: var(--text-tertiary);
+  font-size: 15px;
+  width: 100%;
+  text-align: center;
+  padding: 4px 0;
+}
+
+/* Tarjeta de ejercicio dentro de un entrenamiento */
+.exercise-card { padding: var(--space-4); margin-bottom: var(--space-3); }
+.exercise-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+.exercise-card-header h3 { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+
+/* Callout de progresión — arriba/al lado, comprensible de un vistazo */
+.progress-callout {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-2);
+}
+.progress-callout:last-child { margin-bottom: 0; }
+.progress-callout-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+}
+.progress-callout-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+.progress-callout-text { font-size: 14px; color: var(--text-secondary); line-height: 1.35; }
+
+.progress-callout--good { background: var(--accent-soft); }
+.progress-callout--good .progress-callout-icon { background: var(--accent); color: var(--accent-contrast); }
+.progress-callout--good .progress-callout-title { color: var(--accent); }
+
+.progress-callout--warn { background: var(--warn-soft); }
+.progress-callout--warn .progress-callout-icon { background: var(--warn); color: var(--warn-contrast); }
+.progress-callout--warn .progress-callout-title { color: var(--warn); }
+
+.progress-callout--neutral {
+  padding: var(--space-1) 0;
+  background: transparent;
+}
+.progress-callout--neutral .progress-callout-text { color: var(--text-tertiary); font-size: 13px; }
+
+/* Mini gráfica de progresión (sparkline) dentro de la tarjeta de ejercicio */
+.sparkline-container { height: 44px; margin: var(--space-2) 0 var(--space-1); }
+
+/* Hero de estadística — para pantallas de detalle (peso, ejercicio) */
+.stat-hero { margin-bottom: var(--space-5); }
+.stat-hero .stat-hero-label { font-size: 14px; color: var(--text-secondary); font-weight: 500; margin-bottom: 2px; }
+.stat-hero .stat-hero-value { display: flex; align-items: baseline; gap: 10px; }
+.stat-hero .stat-hero-delta { font-size: 16px; font-weight: 700; }
+
+/* Tarjetas de estadística secundaria (grid de PRs, etc.) */
+.stat-tile { padding: var(--space-3) 0; }
+.stat-tile .stat-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 3px; }
+.stat-tile .stat-value { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.stat-tile .stat-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.stat-grid .stat-tile:nth-child(odd) { padding-right: var(--space-3); }
+.stat-grid .stat-tile:nth-child(-n+2) { border-bottom: 0.5px solid var(--border); padding-bottom: var(--space-3); margin-bottom: var(--space-3); }
+
+.chart-container { position: relative; height: 200px; margin-top: var(--space-2); }
+
+/* Rejilla de plantillas de entrenamiento (Días/Rutinas) */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+}
+.template-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  padding: 0;
+}
+.template-tile:active { opacity: 0.6; }
+.template-tile-add .icon-badge { color: var(--text-tertiary); font-weight: 300; }
+.template-tile-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.2;
+  max-width: 68px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Selector de icono (emoji) para plantillas */
+.icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.icon-picker-opt {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-picker-opt.active { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent) inset; }
+
+/* Icon badge — círculo de icono con identidad de color, reutilizado en accesos
+   rápidos, plantillas e historial. El color es SIEMPRE identidad/categoría,
+   nunca "bueno/malo" (eso es exclusivo de los badges de estado). */
+.icon-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.icon-badge svg { width: 19px; height: 19px; }
+.icon-badge--sm { width: 34px; height: 34px; }
+.icon-badge--sm svg { width: 16px; height: 16px; }
+.icon-badge--lg { width: 56px; height: 56px; font-size: 26px; }
+.icon-badge--lg svg { width: 24px; height: 24px; }
+
+.icon-badge--blue { background: var(--cat-blue-soft); color: var(--cat-blue); }
+.icon-badge--purple { background: var(--cat-purple-soft); color: var(--cat-purple); }
+.icon-badge--amber { background: var(--cat-amber-soft); color: var(--cat-amber); }
+.icon-badge--teal { background: var(--cat-teal-soft); color: var(--cat-teal); }
+.icon-badge--pink { background: var(--cat-pink-soft); color: var(--cat-pink); }
+.icon-badge--green { background: var(--accent-soft); color: var(--accent); }
+
+.quick-action { text-align: left; }
+.quick-action:active { opacity: 0.6; }
+
+/* Rejilla de resumen (Inicio) — icon-badge + valor + etiqueta + delta */
+.resumen-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4) var(--space-3);
+}
+.resumen-tile { display: flex; flex-direction: column; gap: 7px; }
+.resumen-tile .resumen-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.resumen-tile .resumen-value { font-size: 21px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.resumen-tile .resumen-delta { font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
+
+/* Avatar genérico (sin cuentas de usuario, solo icono) */
+.avatar-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.avatar-badge svg { width: 22px; height: 22px; }
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.icon-btn:active { background: var(--surface-2); }
+
+/* Filas de checkbox (selección de datos IA) */
 .checkbox-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border);
+  padding: 13px 0;
+  border-bottom: 0.5px solid var(--border);
 }
 .checkbox-row:last-child { border-bottom: none; }
-.checkbox-row input[type="checkbox"] { width: 22px; height: 22px; }
-
-.workout-list-item { padding: var(--space-3); }
-.workout-list-item .row + .row { margin-top: 6px; }
+.checkbox-row input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  accent-color: var(--accent);
+}

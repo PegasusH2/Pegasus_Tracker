@@ -13,11 +13,11 @@ export async function renderExerciseLibrary(mount) {
     <div class="field">
       <input type="search" id="ex-search" placeholder="Buscar ejercicio..." value="${escapeAttr(state.search)}" />
     </div>
-    <div id="ex-list" class="list"></div>
-    <button class="btn btn-secondary btn-sm" id="toggle-archived" style="margin-top:16px;">
+    <div id="ex-list"></div>
+    <button class="btn btn-ghost btn-sm" id="toggle-archived" style="margin-top:var(--space-4);">
       ${state.showArchived ? 'Ocultar archivados' : 'Ver archivados'}
     </button>
-    <button class="btn btn-primary btn-block" id="new-exercise" style="margin-top:16px;">+ Nuevo ejercicio</button>
+    <button class="btn btn-primary btn-block" id="new-exercise" style="margin-top:var(--space-4);">+ Nuevo ejercicio</button>
   `;
 
   mount.querySelector('#ex-search').addEventListener('input', (e) => {
@@ -42,15 +42,15 @@ async function renderList(mount) {
     return;
   }
 
-  listEl.innerHTML = exercises.map((ex) => `
-    <div class="card row" data-id="${ex.id}">
+  listEl.innerHTML = `<div class="grouped-list">${exercises.map((ex) => `
+    <div class="grouped-row" data-id="${ex.id}">
       <div style="flex:1; min-width:0;" class="ex-open">
-        <div style="font-weight:600; ${ex.archived ? 'opacity:0.5;' : ''}">${escapeHtml(ex.name)}</div>
-        ${ex.muscleGroup ? `<div class="text-dim" style="font-size:13px;">${escapeHtml(ex.muscleGroup)}</div>` : ''}
+        <div class="type-body" style="font-weight:600; ${ex.archived ? 'opacity:0.45;' : ''}">${escapeHtml(ex.name)}</div>
+        ${ex.muscleGroup ? `<div class="type-caption text-faint">${escapeHtml(ex.muscleGroup)}</div>` : ''}
       </div>
       <button class="btn btn-ghost btn-sm ex-edit">Editar</button>
     </div>
-  `).join('');
+  `).join('')}</div>`;
 
   listEl.querySelectorAll('.ex-open').forEach((el) => {
     el.addEventListener('click', () => {
@@ -70,7 +70,7 @@ async function renderList(mount) {
 function openExerciseForm(mount, existing) {
   const isEdit = !!existing;
   openSheet(`
-    <h3 style="margin-bottom:16px;">${isEdit ? 'Editar ejercicio' : 'Nuevo ejercicio'}</h3>
+    <h3 class="type-headline" style="margin-bottom:20px;">${isEdit ? 'Editar ejercicio' : 'Nuevo ejercicio'}</h3>
     <div class="field">
       <label class="label">Nombre</label>
       <input type="text" id="f-name" value="${escapeAttr(existing?.name || '')}" placeholder="Ej. Press banca" autofocus />
