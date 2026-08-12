@@ -196,7 +196,7 @@ export async function createTemplate({ name, icon }) {
   const template = {
     id: newId(),
     name: name.trim(),
-    icon: icon || '💪',
+    icon: icon || 'pierna',
     order: existing.length,
     createdAt: new Date().toISOString(),
   };

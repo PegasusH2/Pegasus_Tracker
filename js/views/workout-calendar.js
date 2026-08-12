@@ -6,7 +6,7 @@
 import * as repo from '../db/repository.js';
 import { formatDate, todayISO } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
-import { openSheet } from '../core/ui.js';
+import { openSheet, templateIconHtml } from '../core/ui.js';
 import { navigate } from '../app.js';
 
 const MONTH_NAMES = [
@@ -195,7 +195,7 @@ async function openCreateForDateSheet(date) {
       <div class="template-grid" style="margin-bottom:var(--space-4);" id="cal-template-grid">
         ${templates.map((t) => `
           <button class="template-tile" data-id="${t.id}">
-            <span class="icon-badge icon-badge--lg">${t.icon}</span>
+            <span class="icon-badge icon-badge--lg">${templateIconHtml(t.icon)}</span>
             <span class="template-tile-label">${escapeHtml(t.name)}</span>
           </button>
         `).join('')}

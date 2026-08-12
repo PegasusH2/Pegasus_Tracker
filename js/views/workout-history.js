@@ -1,11 +1,9 @@
 import * as repo from '../db/repository.js';
 import { escapeHtml } from '../core/escape.js';
-import { openSheet } from '../core/ui.js';
+import { openSheet, TEMPLATE_ICONS, templateIconHtml } from '../core/ui.js';
 import { toast } from '../core/store.js';
 import { renderWorkoutCalendar } from './workout-calendar.js';
 import { navigate } from '../app.js';
-
-const TEMPLATE_ICONS = ['💪', '🦵', '🏋️', '🔥', '⚡', '🎯', '🏃', '🤸', '🧘', '🥊', '🦾', '🚴'];
 
 export async function renderWorkoutHistory(mount) {
   const templates = await repo.listTemplates();
@@ -15,7 +13,7 @@ export async function renderWorkoutHistory(mount) {
     <div class="template-grid" id="template-grid" style="margin-bottom:var(--space-5);">
       ${templates.map((t) => `
         <button class="template-tile" data-id="${t.id}">
-          <span class="icon-badge icon-badge--lg">${t.icon}</span>
+          <span class="icon-badge icon-badge--lg">${templateIconHtml(t.icon)}</span>
           <span class="template-tile-label">${escapeHtml(t.name)}</span>
         </button>
       `).join('')}
@@ -41,7 +39,7 @@ export async function renderWorkoutHistory(mount) {
 }
 
 function openNewTemplateSheet() {
-  let selectedIcon = TEMPLATE_ICONS[0];
+  let selectedIcon = TEMPLATE_ICONS[0].id;
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:20px;">Nueva rutina</h3>
     <div class="field">
@@ -51,7 +49,7 @@ function openNewTemplateSheet() {
     <div class="field">
       <label class="label">Icono</label>
       <div class="icon-picker" id="icon-picker">
-        ${TEMPLATE_ICONS.map((ic, i) => `<button class="icon-picker-opt ${i === 0 ? 'active' : ''}" data-icon="${ic}">${ic}</button>`).join('')}
+        ${TEMPLATE_ICONS.map((ic, i) => `<button class="icon-picker-opt ${i === 0 ? 'active' : ''}" data-icon="${ic.id}" aria-label="${ic.label}">${templateIconHtml(ic.id)}</button>`).join('')}
       </div>
     </div>
     <button class="btn btn-primary btn-block" id="t-save">Crear rutina</button>

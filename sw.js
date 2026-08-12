@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fitness-tracker-v8';
+const CACHE_VERSION = 'fitness-tracker-v9';
 
 const PRECACHE_URLS = [
   './',
@@ -42,6 +42,13 @@ const PRECACHE_URLS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './icons/muscles/icon-pierna.png',
+  './icons/muscles/icon-culo.png',
+  './icons/muscles/icon-espalda.png',
+  './icons/muscles/icon-abs.png',
+  './icons/muscles/icon-pecho.png',
+  './icons/muscles/icon-hombro.png',
+  './icons/muscles/icon-brazo.png',
 ];
 
 self.addEventListener('install', (event) => {

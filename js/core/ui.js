@@ -64,6 +64,27 @@ export const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentC
 
 export const AVATAR_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/></svg>`;
 
+// Iconos ilustrados de grupo muscular para las rutinas (icons/muscles/icon-<id>.png).
+export const TEMPLATE_ICONS = [
+  { id: 'pierna', label: 'Pierna' },
+  { id: 'culo', label: 'Culo' },
+  { id: 'espalda', label: 'Espalda' },
+  { id: 'abs', label: 'Abs' },
+  { id: 'pecho', label: 'Pecho' },
+  { id: 'hombro', label: 'Hombro' },
+  { id: 'brazo', label: 'Brazo' },
+];
+const TEMPLATE_ICON_IDS = new Set(TEMPLATE_ICONS.map((ic) => ic.id));
+
+// Las plantillas creadas antes de este cambio guardan un emoji en vez de un id
+// de icono de músculo; ambos se siguen mostrando correctamente.
+export function templateIconHtml(icon) {
+  if (TEMPLATE_ICON_IDS.has(icon)) {
+    return `<img src="icons/muscles/icon-${icon}.png" alt="" class="icon-badge-img">`;
+  }
+  return icon ?? '';
+}
+
 // Renderiza un aviso de progresión (insight) generado por el motor de progresión
 // como un callout visual — no cambia el texto ni la lógica, solo la presentación.
 export function renderInsightCallout(insight) {

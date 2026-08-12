@@ -1,11 +1,9 @@
 import * as repo from '../db/repository.js';
 import { todayISO, formatDate, relativeDays } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
-import { openSheet, openConfirmSheet, openExercisePickerSheet } from '../core/ui.js';
+import { openSheet, openConfirmSheet, openExercisePickerSheet, TEMPLATE_ICONS, templateIconHtml } from '../core/ui.js';
 import { toast } from '../core/store.js';
 import { navigate } from '../app.js';
-
-const TEMPLATE_ICONS = ['💪', '🦵', '🏋️', '🔥', '⚡', '🎯', '🏃', '🤸', '🧘', '🥊', '🦾', '🚴'];
 
 export async function renderTemplateDetail(mount, { templateId }) {
   const template = await repo.getTemplate(templateId);
@@ -23,7 +21,7 @@ export async function renderTemplateDetail(mount, { templateId }) {
   mount.innerHTML = `
     <div class="row" style="align-items:flex-start; margin-bottom:4px;">
       <div style="display:flex; align-items:center; gap:12px;">
-        <span class="icon-badge icon-badge--lg" style="font-size:22px;">${template.icon}</span>
+        <span class="icon-badge icon-badge--lg" style="font-size:22px;">${templateIconHtml(template.icon)}</span>
         <h1 class="type-title">${escapeHtml(template.name)}</h1>
       </div>
       <button class="btn btn-ghost btn-sm" id="edit-template">Editar</button>
@@ -164,7 +162,7 @@ function openEditTemplateSheet(mount, template) {
     <div class="field">
       <label class="label">Icono</label>
       <div class="icon-picker" id="icon-picker">
-        ${TEMPLATE_ICONS.map((ic) => `<button class="icon-picker-opt ${ic === template.icon ? 'active' : ''}" data-icon="${ic}">${ic}</button>`).join('')}
+        ${TEMPLATE_ICONS.map((ic) => `<button class="icon-picker-opt ${ic.id === template.icon ? 'active' : ''}" data-icon="${ic.id}" aria-label="${ic.label}">${templateIconHtml(ic.id)}</button>`).join('')}
       </div>
     </div>
     <button class="btn btn-primary btn-block" id="t-save">Guardar</button>
