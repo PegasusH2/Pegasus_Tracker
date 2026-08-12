@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fitness-tracker-v7';
+const CACHE_VERSION = 'fitness-tracker-v8';
 
 const PRECACHE_URLS = [
   './',
@@ -49,7 +49,13 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_VERSION).then((cache) =>
       Promise.all(
         PRECACHE_URLS.map((url) =>
-          cache.add(url).catch((err) => console.warn('No se pudo precachear', url, err))
+          // cache: 'reload' fuerza ir a red e ignora la caché HTTP del
+          // navegador — con fetch normal, un asset ya cacheado por el
+          // navegador (Cache-Control de GitHub Pages) podía precachearse
+          // "de nuevo" pero con bytes antiguos.
+          fetch(new Request(url, { cache: 'reload' }))
+            .then((response) => cache.put(url, response))
+            .catch((err) => console.warn('No se pudo precachear', url, err))
         )
       )
     )
