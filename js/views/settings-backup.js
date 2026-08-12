@@ -26,6 +26,17 @@ export async function renderSettingsBackup(mount) {
       <button class="btn btn-secondary btn-block" id="import-btn">Seleccionar archivo de backup</button>
     </div>
 
+    <div class="card" style="margin-bottom:var(--space-4);">
+      <div class="type-headline" style="margin-bottom:6px;">Importar progreso (añadir, sin sustituir)</div>
+      <p class="type-body text-dim" style="margin-bottom:var(--space-4);">
+        Añade registros de peso, medidas y plicómetro desde un archivo (por ejemplo, exportados de una
+        hoja de cálculo). <strong>Nunca borra ni sustituye nada</strong> — ni tus entrenamientos, ni
+        datos ya existentes. Solo añade filas nuevas.
+      </p>
+      <input type="file" accept="application/json" id="import-progress-file" style="display:none;" />
+      <button class="btn btn-secondary btn-block" id="import-progress-btn">Seleccionar archivo de progreso</button>
+    </div>
+
     <div class="section-label">Zona de riesgo</div>
     <div class="card" style="margin-top:var(--space-2);">
       <div class="type-headline text-danger" style="margin-bottom:6px;">Borrar todos los datos</div>
@@ -76,6 +87,30 @@ export async function renderSettingsBackup(mount) {
       toast('El archivo no es un backup válido');
     }
     fileInput.value = '';
+  });
+
+  const progressFileInput = mount.querySelector('#import-progress-file');
+  mount.querySelector('#import-progress-btn').addEventListener('click', () => progressFileInput.click());
+  progressFileInput.addEventListener('change', async () => {
+    const file = progressFileInput.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const totalCount = (data.bodyWeight?.length || 0) + (data.measurements?.length || 0) + (data.skinfold?.length || 0);
+      const ok = await openConfirmSheet(
+        `Se añadirán ${data.bodyWeight?.length || 0} registros de peso, ${data.measurements?.length || 0} de medidas y ${data.skinfold?.length || 0} de plicómetro. No se borra nada existente. ¿Continuar?`,
+        { confirmLabel: 'Añadir', danger: false }
+      );
+      if (!ok || totalCount === 0) { progressFileInput.value = ''; return; }
+      const result = await repo.importProgressData(data);
+      toast(`Añadido: ${result.bodyWeight} peso, ${result.measurements} medidas, ${result.skinfold} plicómetro`);
+      navigate('/progreso');
+    } catch (err) {
+      console.error(err);
+      toast('El archivo no tiene un formato válido');
+    }
+    progressFileInput.value = '';
   });
 
   const checkbox = mount.querySelector('#confirm-delete-checkbox');

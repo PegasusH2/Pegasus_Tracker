@@ -543,6 +543,54 @@ export async function importAllData(backup) {
   });
 }
 
+// Importación ADITIVA de progreso (peso/medidas/plicómetro) desde una fuente
+// externa (p.ej. una hoja de cálculo) — a diferencia de importAllData, nunca
+// borra ni sustituye nada: solo añade filas nuevas, y jamás toca
+// entrenamientos, ejercicios o plantillas. Los tipos de medida/puntos de
+// pliegue se buscan por nombre y se crean si no existen todavía.
+// data: { bodyWeight: [{date, weightKg}], measurements: [{date, type, value?, valueLeft?, valueRight?}], skinfold: [{date, site, valueMm}] }
+export async function importProgressData(data) {
+  const result = { bodyWeight: 0, measurements: 0, skinfold: 0 };
+
+  for (const entry of data.bodyWeight || []) {
+    await addBodyWeight({ date: entry.date, weightKg: entry.weightKg });
+    result.bodyWeight++;
+  }
+
+  const types = await listMeasurementTypes({ includeDisabled: true });
+  const typeByName = new Map(types.map((t) => [t.name, t]));
+  for (const entry of data.measurements || []) {
+    let type = typeByName.get(entry.type);
+    if (!type) {
+      const bilateral = entry.valueLeft !== undefined || entry.valueRight !== undefined;
+      type = await createMeasurementType({ name: entry.type, unit: 'cm', bilateral });
+      typeByName.set(entry.type, type);
+    }
+    await addMeasurement({
+      typeId: type.id,
+      date: entry.date,
+      value: entry.value ?? null,
+      valueLeft: entry.valueLeft ?? null,
+      valueRight: entry.valueRight ?? null,
+    });
+    result.measurements++;
+  }
+
+  const sites = await listSkinfoldSites();
+  const siteByName = new Map(sites.map((s) => [s.name, s]));
+  for (const entry of data.skinfold || []) {
+    let site = siteByName.get(entry.site);
+    if (!site) {
+      site = await createSkinfoldSite({ name: entry.site });
+      siteByName.set(entry.site, site);
+    }
+    await addSkinfoldEntry({ siteId: site.id, date: entry.date, valueMm: entry.valueMm });
+    result.skinfold++;
+  }
+
+  return result;
+}
+
 export async function clearAllData() {
   await db.transaction('rw', TABLES.map((t) => db[t]), async () => {
     for (const table of TABLES) {

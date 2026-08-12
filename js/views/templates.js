@@ -35,7 +35,7 @@ export async function renderTemplateDetail(mount, { templateId }) {
       ${lastWorkout ? `Último entrenamiento · ${relativeDays(lastWorkout.date)}` : 'Todavía no has hecho esta rutina'}
     </div>
 
-    <button class="btn btn-primary btn-block" id="start-workout" style="margin-bottom:var(--space-5);">Empezar</button>
+    ${exercises.length ? `<button class="btn btn-primary btn-block" id="start-workout" style="margin-bottom:var(--space-5);">Empezar</button>` : ''}
 
     <div class="section-label">Ejercicios</div>
     <div id="template-exercise-list" style="margin-bottom:var(--space-4);"></div>
@@ -53,8 +53,7 @@ export async function renderTemplateDetail(mount, { templateId }) {
       },
     });
   });
-  mount.querySelector('#start-workout').addEventListener('click', async () => {
-    if (!exercises.length) { toast('Añade al menos un ejercicio a la rutina antes de empezar'); return; }
+  mount.querySelector('#start-workout')?.addEventListener('click', async () => {
     const workout = await repo.startWorkoutFromTemplate(templateId, { date: todayISO() });
     navigate(`/entreno/sesion/${workout.id}`);
   });
