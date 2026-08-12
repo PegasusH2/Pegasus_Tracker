@@ -15,6 +15,11 @@ main.view {
   margin: 0 auto;
 }
 
+/* Modo entreno enfocado — sin bottom-nav, no hace falta reservarle espacio */
+main.view.view--focus {
+  padding-bottom: calc(var(--safe-bottom) + var(--space-6));
+}
+
 /* Nav inferior — estilo tab bar nativo */
 .bottom-nav {
   position: fixed;
@@ -34,18 +39,17 @@ main.view {
 .nav-item {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  min-height: 44px;
   color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 600;
-  transition: color var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
-.nav-item svg { width: 25px; height: 25px; display: block; }
+.nav-icon { display: flex; }
+.nav-item svg { width: 27px; height: 27px; display: block; }
 .nav-item.active { color: var(--accent); }
+.nav-item:active { transform: scale(0.9); }
 
 /* Segmented control — para subtabs */
 .segmented {
@@ -143,6 +147,21 @@ main.view {
   background: var(--border);
   margin: 6px auto 18px;
 }
+
+/* Onboarding — pantalla completa, sin bottom-nav, fuera del router normal */
+.onboarding-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: calc(var(--space-6) + var(--safe-top)) var(--space-5) calc(var(--space-6) + var(--safe-bottom));
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.onboarding-body { width: 100%; }
 
 .toast {
   position: fixed;

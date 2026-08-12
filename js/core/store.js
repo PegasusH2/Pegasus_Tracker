@@ -21,7 +21,3 @@ export function toast(message, { duration = 2200 } = {}) {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), duration);
 }
-
-export function confirmDialog(message) {
-  return window.confirm(message);
-}

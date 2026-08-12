@@ -61,7 +61,7 @@ function hexToRgb(hex) {
 function drawIcon(size, { padding = 0 } = {}) {
   const rgba = Buffer.alloc(size * size * 4);
   const bg = hexToRgb('#0d0d0d');
-  const accent = hexToRgb('#39ff88');
+  const accent = hexToRgb('#E0342A');
   const cx = size / 2, cy = size / 2;
   const contentR = (size / 2) - padding;
 

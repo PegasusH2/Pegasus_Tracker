@@ -3,14 +3,20 @@ import { escapeHtml } from './escape.js';
 import { toast } from './store.js';
 
 // Helper compartido para mostrar un modal tipo "bottom sheet" (patrón iOS).
-export function openSheet(innerHtml, { onMount } = {}) {
+// onClose (opcional) se llama al cerrarse por CUALQUIER vía — botón, tocar
+// fuera o Escape — como máximo una vez.
+export function openSheet(innerHtml, { onMount, onClose } = {}) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `<div class="modal-sheet"><div class="sheet-handle"></div>${innerHtml}</div>`;
 
+  let closed = false;
   function close() {
+    if (closed) return;
+    closed = true;
     overlay.remove();
     document.removeEventListener('keydown', onKey);
+    onClose?.();
   }
   function onKey(e) {
     if (e.key === 'Escape') close();
@@ -27,27 +33,36 @@ export function openSheet(innerHtml, { onMount } = {}) {
   return close;
 }
 
+// Confirmación mediante el bottom-sheet propio de la app — nunca usa
+// window.confirm(), que puede no dispararse de forma fiable en una PWA
+// instalada en iOS (modo standalone). Devuelve Promise<boolean>.
+export function openConfirmSheet(message, { confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', danger = true } = {}) {
+  return new Promise((resolve) => {
+    const close = openSheet(`
+      <p class="type-body" style="margin-bottom:20px;">${escapeHtml(message)}</p>
+      <button class="btn ${danger ? 'btn-danger' : 'btn-primary'} btn-block" id="confirm-yes">${escapeHtml(confirmLabel)}</button>
+      <button class="btn btn-ghost btn-block" id="confirm-no" style="margin-top:8px;">${escapeHtml(cancelLabel)}</button>
+    `, {
+      onMount: (sheet) => {
+        sheet.querySelector('#confirm-yes').addEventListener('click', () => { resolve(true); close(); });
+        sheet.querySelector('#confirm-no').addEventListener('click', () => { resolve(false); close(); });
+      },
+      onClose: () => resolve(false),
+    });
+  });
+}
+
 // Iconos de navegación — trazo simple (currentColor), sin marcas ni imitaciones.
 export const NAV_ICONS = {
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h3v-6h4v6h3a1 1 0 0 0 1-1v-9"/></svg>`,
   entreno: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9v6"/><path d="M4 10v4"/><path d="M18 9v6"/><path d="M20 10v4"/><path d="M6 12h12"/></svg>`,
   progreso: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l5-5 4 4 7-8"/><path d="M15 6h5v5"/></svg>`,
-  datos: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.5M12 18.5V21M4.9 7l2.1 1.3M17 15.7l2.1 1.3M4.9 17l2.1-1.3M17 8.3l2.1-1.3M3 12h2.5M18.5 12H21"/></svg>`,
+  settings: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.5M12 18.5V21M4.9 7l2.1 1.3M17 15.7l2.1 1.3M4.9 17l2.1-1.3M17 8.3l2.1-1.3M3 12h2.5M18.5 12H21"/></svg>`,
 };
 
 export const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>`;
 
 export const AVATAR_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/></svg>`;
-
-// Color de identidad determinista para una entidad (p. ej. una plantilla),
-// para poder distinguirlas visualmente sin necesitar que el usuario elija un
-// color. Es puramente decorativo — nunca representa un estado bueno/malo.
-const CATEGORY_ROTATION = ['blue', 'purple', 'amber', 'teal', 'pink'];
-export function colorForId(id) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return CATEGORY_ROTATION[hash % CATEGORY_ROTATION.length];
-}
 
 // Renderiza un aviso de progresión (insight) generado por el motor de progresión
 // como un callout visual — no cambia el texto ni la lógica, solo la presentación.

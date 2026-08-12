@@ -3,8 +3,10 @@ import { compareSessions } from '../core/progression.js';
 import { trendSeries } from '../core/stats.js';
 import { formatDate, relativeDays } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
-import { openSheet, openExercisePickerSheet, renderInsightCallout, getChartThemeColors, CHECK_ICON } from '../core/ui.js';
-import { toast, confirmDialog } from '../core/store.js';
+import { openSheet, openConfirmSheet, openExercisePickerSheet, renderInsightCallout, getChartThemeColors, CHECK_ICON } from '../core/ui.js';
+import { toKg, toUnit, roundForDisplay, inputStep } from '../core/units.js';
+import { getWeightUnitsEnabled, getWeightLastInputUnit } from '../core/settings.js';
+import { toast } from '../core/store.js';
 import { navigate } from '../app.js';
 
 export async function renderWorkoutSession(mount, { workoutId }) {
@@ -14,10 +16,18 @@ export async function renderWorkoutSession(mount, { workoutId }) {
     return;
   }
   const { workout, exercises } = detail;
+  // No hay un toggle de unidad por sesión: cada serie elige su propia unidad
+  // (kg/lb) tocando su etiqueta — así se pueden combinar discos de distinto
+  // sistema dentro del mismo ejercicio. defaultUnit solo fija con qué unidad
+  // empieza una serie nueva que todavía no se ha tocado.
+  const defaultUnit = getWeightLastInputUnit();
 
   mount.innerHTML = `
     <div class="row" style="margin-bottom:2px; align-items:flex-start;">
-      <h1 class="type-title" id="w-title">${escapeHtml(workout.name)}</h1>
+      <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+        <button class="icon-btn" id="w-back" aria-label="Volver a Entreno" style="flex-shrink:0; margin-left:-6px;">←</button>
+        <h1 class="type-title" id="w-title" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(workout.name)}</h1>
+      </div>
       <button class="btn btn-ghost btn-sm" id="w-edit">Editar</button>
     </div>
     <div class="type-caption text-dim" style="margin-bottom:24px;">${formatDate(workout.date)}${workout.completed ? ' · <span class="text-good">Finalizado</span>' : ''}</div>
@@ -37,18 +47,24 @@ export async function renderWorkoutSession(mount, { workoutId }) {
   `;
 
   const cardsContainer = mount.querySelector('#exercise-cards');
-  if (!exercises.length) {
-    cardsContainer.innerHTML = `<div class="empty-state">Añade tu primer ejercicio para empezar a registrar series.</div>`;
-  } else {
+
+  async function renderAllCards() {
+    cardsContainer.innerHTML = '';
+    if (!exercises.length) {
+      cardsContainer.innerHTML = `<div class="empty-state">Añade tu primer ejercicio para empezar a registrar series.</div>`;
+      return;
+    }
     for (const we of exercises) {
       const card = document.createElement('div');
       card.className = 'card exercise-card';
       card.dataset.weId = we.id;
       cardsContainer.appendChild(card);
-      await renderExerciseCard(card, workout, we.exerciseId, we.id);
+      await renderExerciseCard(card, workout, we.exerciseId, we.id, defaultUnit);
     }
   }
+  await renderAllCards();
 
+  mount.querySelector('#w-back').addEventListener('click', () => navigate('/entreno'));
   mount.querySelector('#w-edit').addEventListener('click', () => openWorkoutEditSheet(mount, workout));
   mount.querySelector('#w-notes').addEventListener('blur', async (e) => {
     await repo.updateWorkout(workout.id, { notes: e.target.value });
@@ -84,9 +100,10 @@ function openWorkoutEditSheet(mount, workout) {
         await renderWorkoutSession(mount, { workoutId: workout.id });
       });
       sheet.querySelector('#e-delete').addEventListener('click', async () => {
-        if (!confirmDialog('¿Eliminar este entrenamiento y todas sus series? Esta acción no se puede deshacer.')) return;
-        await repo.deleteWorkout(workout.id);
         close();
+        const ok = await openConfirmSheet('¿Eliminar este entrenamiento y todas sus series? Esta acción no se puede deshacer.', { confirmLabel: 'Eliminar' });
+        if (!ok) return;
+        await repo.deleteWorkout(workout.id);
         navigate('/entreno');
       });
     },
@@ -102,20 +119,29 @@ function openAddExerciseSheet(mount, workoutId) {
   });
 }
 
-async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId) {
+async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit = 'kg') {
   const exercise = await repo.getExercise(exerciseId);
   const workoutExercise = await repo.getWorkoutExercise(workoutExerciseId);
   const currentSets = await repo.getSetsForWorkoutExercise(workoutExerciseId);
   const lastEntry = await repo.getLastSessionForExercise(exerciseId, { excludeWorkoutId: workout.id });
   const lastSets = lastEntry?.sets ?? [];
 
+  // kg y lb son DATOS que se SUMAN cuando ambas unidades están activas
+  // (Ajustes > Pesos) — ej. 10kg + 2,5lb de discos combinados en la misma
+  // serie — no una conversión del mismo número. weight sigue siendo el total
+  // canónico en kg (weightKgPart/weightLbPart son solo los dos componentes
+  // introducidos, para poder mostrarlos y editarlos por separado).
+  const enabledUnits = getWeightUnitsEnabled();
+  const dualUnit = enabledUnits.kg && enabledUnits.lb;
+  const soloUnit = enabledUnits.kg ? 'kg' : 'lb';
+
   const completedCurrentSets = currentSets.filter((s) => s.weight != null && s.reps != null);
   const comparison = (completedCurrentSets.length && lastSets.length)
-    ? compareSessions(currentSets, lastSets, { compareVolume: currentSets.length >= lastSets.length })
+    ? compareSessions(currentSets, lastSets, { compareVolume: currentSets.length >= lastSets.length, unit: defaultUnit, loadMode: exercise.loadMode })
     : null;
 
   const history = await repo.getExerciseHistory(exerciseId);
-  const sparkValues = trendSeries(history, 'topWeight').map((p) => p.value).filter((v) => v != null);
+  const sparkValues = trendSeries(history, 'topWeight', { loadMode: exercise.loadMode }).map((p) => p.value).filter((v) => v != null);
 
   card.innerHTML = `
     <div class="exercise-card-header">
@@ -123,6 +149,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId) 
       <button class="btn btn-ghost-danger btn-sm remove-exercise">Quitar</button>
     </div>
     ${targetCaption(workoutExercise)}
+    ${exercise.loadMode === 'perSide' ? `<div class="type-caption text-faint" style="margin-bottom:10px;">Peso por lado/mancuerna — la carga total se calcula ×2.</div>` : ''}
 
     ${lastEntry ? `
       <div class="last-session">
@@ -130,7 +157,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId) 
         ${lastSets.map((s) => `
           <div class="last-session-set">
             <span class="set-idx num">${s.setNumber}</span>
-            <span class="num">${s.weight ?? '—'} kg × ${s.reps ?? '—'}</span>
+            <span class="num">${weightSummary(s, defaultUnit)} × ${s.reps ?? '—'}</span>
             <span class="text-faint">${s.rir != null ? `RIR ${s.rir}` : ''}</span>
           </div>
         `).join('') || '<span class="last-session-empty">Sin series registradas</span>'}
@@ -148,13 +175,28 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId) 
   const setsList = card.querySelector('.sets-list');
   setsList.innerHTML = currentSets.map((s) => {
     const done = s.weight != null && s.reps != null;
+    const soloVal = s.weight != null ? roundForDisplay(toUnit(s.weight, soloUnit), 1) : '';
     return `
-    <div class="set-row" data-set-id="${s.id}">
+    <div class="set-group">
+    <div class="set-row ${dualUnit ? 'set-row--dual-unit' : ''}" data-set-id="${s.id}">
       <span class="set-idx">${s.setNumber}</span>
-      <div class="set-field">
-        <input type="number" inputmode="decimal" step="0.5" class="input-weight" value="${s.weight ?? ''}" placeholder="—" />
-        <span class="set-unit">kg</span>
-      </div>
+      ${dualUnit ? `
+        <div class="set-field set-weight-dual">
+          <div class="set-weight-col">
+            <input type="number" inputmode="decimal" step="${inputStep('kg', 'set')}" class="input-weight-kgpart" value="${s.weightKgPart ?? ''}" placeholder="0" />
+            <span class="set-unit">kg</span>
+          </div>
+          <div class="set-weight-col">
+            <input type="number" inputmode="decimal" step="${inputStep('lb', 'set')}" class="input-weight-lbpart" value="${s.weightLbPart ?? ''}" placeholder="0" />
+            <span class="set-unit">lb</span>
+          </div>
+        </div>
+      ` : `
+        <div class="set-field">
+          <input type="number" inputmode="decimal" step="${inputStep(soloUnit, 'set')}" class="input-weight" value="${soloVal}" placeholder="—" />
+          <span class="set-unit">${soloUnit}</span>
+        </div>
+      `}
       <div class="set-field">
         <input type="number" inputmode="numeric" class="input-reps" value="${s.reps ?? ''}" placeholder="—" />
         <span class="set-unit">reps</span>
@@ -166,35 +208,88 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId) 
       <span class="set-check ${done ? 'done' : ''}">${CHECK_ICON}</span>
       <button class="set-remove">✕</button>
     </div>
+    ${dualUnit && s.weight != null ? `
+      <div class="set-total">
+        Total <button type="button" class="set-total-toggle" data-weight-kg="${s.weight}" data-unit="${defaultUnit}">${formatTotal(s.weight, defaultUnit)}</button>
+      </div>
+    ` : ''}
+    </div>
   `;
   }).join('');
 
+  setsList.querySelectorAll('.set-total-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const newUnit = btn.dataset.unit === 'kg' ? 'lb' : 'kg';
+      btn.dataset.unit = newUnit;
+      btn.textContent = formatTotal(Number(btn.dataset.weightKg), newUnit);
+    });
+  });
+
   setsList.querySelectorAll('.set-row').forEach((row) => {
     const setId = row.dataset.setId;
-    ['input-weight', 'input-reps', 'input-rir'].forEach((cls, i) => {
-      const field = ['weight', 'reps', 'rir'][i];
-      row.querySelector(`.${cls}`).addEventListener('blur', async (e) => {
+
+    const kgPartInput = row.querySelector('.input-weight-kgpart');
+    const lbPartInput = row.querySelector('.input-weight-lbpart');
+    const soloInput = row.querySelector('.input-weight');
+
+    if (kgPartInput && lbPartInput) {
+      // kg y lb son componentes que se SUMAN (discos combinados) — cada uno
+      // se guarda tal cual se escribe, sin recalcular el otro.
+      async function commitParts() {
+        const kgRaw = kgPartInput.value;
+        const lbRaw = lbPartInput.value;
+        if (kgRaw === '' && lbRaw === '') {
+          await repo.updateSet(setId, { weight: null, weightKgPart: null, weightLbPart: null });
+        } else {
+          const kgPart = kgRaw === '' ? 0 : Number(kgRaw);
+          const lbPart = lbRaw === '' ? 0 : Number(lbRaw);
+          const weight = kgPart + toKg(lbPart, 'lb');
+          await repo.updateSet(setId, { weight, weightKgPart: kgRaw === '' ? null : kgPart, weightLbPart: lbRaw === '' ? null : lbPart });
+        }
+        await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+      }
+      kgPartInput.addEventListener('blur', commitParts);
+      lbPartInput.addEventListener('blur', commitParts);
+    } else if (soloInput) {
+      soloInput.addEventListener('blur', async (e) => {
         const raw = e.target.value;
-        const value = raw === '' ? null : Number(raw);
-        await repo.updateSet(setId, { [field]: value });
-        await renderExerciseCard(card, workout, exerciseId, workoutExerciseId);
+        const value = raw === '' ? null : toKg(raw, soloUnit);
+        await repo.updateSet(setId, { weight: value, weightKgPart: null, weightLbPart: null });
+        await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
       });
+    }
+
+    row.querySelector('.input-reps').addEventListener('blur', async (e) => {
+      const value = e.target.value === '' ? null : Number(e.target.value);
+      await repo.updateSet(setId, { reps: value });
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+    });
+    row.querySelector('.input-rir').addEventListener('blur', async (e) => {
+      const value = e.target.value === '' ? null : Number(e.target.value);
+      await repo.updateSet(setId, { rir: value });
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
     });
     row.querySelector('.set-remove').addEventListener('click', async () => {
       await repo.deleteSet(setId);
-      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId);
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
     });
   });
 
   card.querySelector('.add-set').addEventListener('click', async (e) => {
     e.target.disabled = true; // evita duplicar el número de serie si se pulsa varias veces rápido
     const template = lastSets[currentSets.length];
-    await repo.addSet(workoutExerciseId, { weight: template?.weight ?? null, reps: template?.reps ?? null });
-    await renderExerciseCard(card, workout, exerciseId, workoutExerciseId);
+    await repo.addSet(workoutExerciseId, {
+      weight: template?.weight ?? null,
+      weightKgPart: template?.weightKgPart ?? null,
+      weightLbPart: template?.weightLbPart ?? null,
+      reps: template?.reps ?? null,
+    });
+    await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
   });
 
   card.querySelector('.remove-exercise').addEventListener('click', async () => {
-    if (!confirmDialog(`¿Quitar "${exercise.name}" de este entrenamiento?`)) return;
+    const ok = await openConfirmSheet(`¿Quitar "${exercise.name}" de este entrenamiento?`, { confirmLabel: 'Quitar' });
+    if (!ok) return;
     await repo.removeExerciseFromWorkout(workoutExerciseId);
     card.remove();
   });
@@ -210,6 +305,23 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId) 
 
   const sparkCanvas = card.querySelector('.sparkline-canvas');
   if (sparkCanvas) renderSparkline(sparkCanvas, sparkValues);
+}
+
+// Texto compacto del total en la unidad elegida, p.ej. "11,1 kg".
+function formatTotal(weightKg, unit) {
+  const v = roundForDisplay(toUnit(weightKg, unit), 1);
+  const n = Number.isInteger(v) ? String(v) : v.toFixed(1).replace(/\.0$/, '');
+  return `${n} ${unit}`;
+}
+
+// Para "última sesión": si la serie combinaba kg+lb, muestra el desglose real
+// (ej. "10 kg + 2,5 lb"); si no, el total simple en la unidad por defecto.
+function weightSummary(s, defaultUnit) {
+  if (s.weight == null) return '—';
+  if (s.weightKgPart != null && s.weightLbPart != null) {
+    return `${s.weightKgPart} kg + ${s.weightLbPart} lb`;
+  }
+  return formatTotal(s.weight, defaultUnit);
 }
 
 // Objetivo planeado (congelado al crear la sesión desde una plantilla) — solo

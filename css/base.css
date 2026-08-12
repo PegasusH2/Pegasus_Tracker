@@ -1,7 +1,7 @@
 /* ============================================================
    FITNESS TRACKER — Sistema de diseño
-   Premium, minimalista, deportivo. Superficies en capas,
-   color reservado para estado (progreso/aviso/activo).
+   Premium, minimalista, deportivo. Superficies en capas.
+   Un único acento (rojo) + neutros — máximo 2 colores en toda la app.
    ============================================================ */
 
 :root {
@@ -17,12 +17,14 @@
   --text-secondary: rgba(21, 21, 26, 0.62);
   --text-tertiary: rgba(21, 21, 26, 0.35);
 
-  /* Color de estado — usar con moderación */
-  --accent: #1FA75A;
-  --accent-soft: rgba(31, 167, 90, 0.12);
+  /* Color: un único acento (rojo) + neutros. Máximo 2 "colores" en toda la
+     app — el resto es blanco/negro/grises. El aviso (--warn) es gris, no un
+     tercer color; se distingue por forma (contorno), no por tono. */
+  --accent: #E0342A;
+  --accent-soft: rgba(224, 52, 42, 0.1);
   --accent-contrast: #FFFFFF;
-  --warn: #E08A00;
-  --warn-soft: rgba(224, 138, 0, 0.12);
+  --warn: #6E6E73;
+  --warn-soft: rgba(60, 60, 67, 0.08);
   --warn-contrast: #FFFFFF;
   --danger: #E0342A;
   --danger-soft: rgba(224, 52, 42, 0.1);
@@ -31,19 +33,6 @@
   --nav-bg: rgba(255, 255, 255, 0.78);
   --shadow-card: 0 1px 2px rgba(20, 20, 30, 0.04), 0 6px 16px rgba(20, 20, 30, 0.05);
   --shadow-sheet: 0 -8px 30px rgba(20, 20, 30, 0.12);
-
-  /* Colores de categoría — identidad visual (peso/medidas/plicómetro/plantillas),
-     NUNCA se usan para indicar bueno/malo. Ese significado es solo de --accent/--warn/--danger. */
-  --cat-blue: #0A84FF;
-  --cat-blue-soft: rgba(10, 132, 255, 0.12);
-  --cat-purple: #AF52DE;
-  --cat-purple-soft: rgba(175, 82, 222, 0.12);
-  --cat-amber: #FF9F0A;
-  --cat-amber-soft: rgba(255, 159, 10, 0.14);
-  --cat-teal: #30B0C7;
-  --cat-teal-soft: rgba(48, 176, 199, 0.12);
-  --cat-pink: #FF375F;
-  --cat-pink-soft: rgba(255, 55, 95, 0.12);
 
   /* Forma */
   --radius-sm: 10px;
@@ -83,30 +72,19 @@
     --text-secondary: rgba(255, 255, 255, 0.62);
     --text-tertiary: rgba(255, 255, 255, 0.34);
 
-    --accent: #32D962;
-    --accent-soft: rgba(50, 217, 98, 0.14);
-    --accent-contrast: #00210C;
-    --warn: #FFA426;
-    --warn-soft: rgba(255, 164, 38, 0.14);
-    --warn-contrast: #1F1300;
+    --accent: #FF453A;
+    --accent-soft: rgba(255, 69, 58, 0.16);
+    --accent-contrast: #FFFFFF;
+    --warn: #98989D;
+    --warn-soft: rgba(255, 255, 255, 0.08);
+    --warn-contrast: #000000;
     --danger: #FF453A;
-    --danger-soft: rgba(255, 69, 58, 0.14);
-    --danger-contrast: #1F0402;
+    --danger-soft: rgba(255, 69, 58, 0.16);
+    --danger-contrast: #FFFFFF;
 
     --nav-bg: rgba(20, 20, 22, 0.75);
     --shadow-card: none;
     --shadow-sheet: 0 -8px 30px rgba(0, 0, 0, 0.5);
-
-    --cat-blue: #409CFF;
-    --cat-blue-soft: rgba(64, 156, 255, 0.18);
-    --cat-purple: #BF5AF2;
-    --cat-purple-soft: rgba(191, 90, 242, 0.18);
-    --cat-amber: #FFB340;
-    --cat-amber-soft: rgba(255, 179, 64, 0.18);
-    --cat-teal: #40C8E0;
-    --cat-teal-soft: rgba(64, 200, 224, 0.18);
-    --cat-pink: #FF6482;
-    --cat-pink-soft: rgba(255, 100, 130, 0.18);
   }
 }
 

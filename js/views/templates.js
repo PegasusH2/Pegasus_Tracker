@@ -1,8 +1,8 @@
 import * as repo from '../db/repository.js';
 import { todayISO, formatDate, relativeDays } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
-import { openSheet, openExercisePickerSheet, colorForId } from '../core/ui.js';
-import { toast, confirmDialog } from '../core/store.js';
+import { openSheet, openConfirmSheet, openExercisePickerSheet } from '../core/ui.js';
+import { toast } from '../core/store.js';
 import { navigate } from '../app.js';
 
 const TEMPLATE_ICONS = ['💪', '🦵', '🏋️', '🔥', '⚡', '🎯', '🏃', '🤸', '🧘', '🥊', '🦾', '🚴'];
@@ -23,7 +23,7 @@ export async function renderTemplateDetail(mount, { templateId }) {
   mount.innerHTML = `
     <div class="row" style="align-items:flex-start; margin-bottom:4px;">
       <div style="display:flex; align-items:center; gap:12px;">
-        <span class="icon-badge icon-badge--lg icon-badge--${colorForId(template.id)}" style="font-size:22px;">${template.icon}</span>
+        <span class="icon-badge icon-badge--lg" style="font-size:22px;">${template.icon}</span>
         <h1 class="type-title">${escapeHtml(template.name)}</h1>
       </div>
       <button class="btn btn-ghost btn-sm" id="edit-template">Editar</button>
@@ -144,9 +144,10 @@ function openTemplateExerciseForm(mount, template, { te, exercise, isNew }) {
         await renderTemplateDetail(mount, { templateId: template.id });
       });
       sheet.querySelector('#te-remove')?.addEventListener('click', async () => {
-        if (!confirmDialog(`¿Quitar "${exercise.name}" de esta rutina?`)) return;
-        await repo.removeTemplateExercise(te.id);
         close();
+        const ok = await openConfirmSheet(`¿Quitar "${exercise.name}" de esta rutina?`, { confirmLabel: 'Quitar' });
+        if (!ok) return;
+        await repo.removeTemplateExercise(te.id);
         await renderTemplateDetail(mount, { templateId: template.id });
       });
     },
@@ -185,9 +186,10 @@ function openEditTemplateSheet(mount, template) {
         await renderTemplateDetail(mount, { templateId: template.id });
       });
       sheet.querySelector('#t-delete').addEventListener('click', async () => {
-        if (!confirmDialog(`¿Eliminar la rutina "${template.name}"? Los entrenamientos que ya has hecho con ella no se verán afectados.`)) return;
-        await repo.deleteTemplate(template.id);
         close();
+        const ok = await openConfirmSheet(`¿Eliminar la rutina "${template.name}"? Los entrenamientos que ya has hecho con ella no se verán afectados.`, { confirmLabel: 'Eliminar' });
+        if (!ok) return;
+        await repo.deleteTemplate(template.id);
         navigate('/entreno');
       });
     },

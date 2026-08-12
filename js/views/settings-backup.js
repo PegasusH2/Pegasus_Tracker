@@ -1,5 +1,6 @@
 import * as repo from '../db/repository.js';
 import { toast } from '../core/store.js';
+import { openConfirmSheet } from '../core/ui.js';
 import { navigate } from '../app.js';
 
 export async function renderSettingsBackup(mount) {
@@ -59,7 +60,8 @@ export async function renderSettingsBackup(mount) {
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files[0];
     if (!file) return;
-    if (!window.confirm('Esto sustituirá todos tus datos actuales por los del archivo. ¿Continuar?')) {
+    const ok = await openConfirmSheet('Esto sustituirá todos tus datos actuales por los del archivo. ¿Continuar?', { confirmLabel: 'Sustituir' });
+    if (!ok) {
       fileInput.value = '';
       return;
     }
@@ -80,7 +82,8 @@ export async function renderSettingsBackup(mount) {
   const deleteBtn = mount.querySelector('#delete-btn');
   checkbox.addEventListener('change', () => { deleteBtn.disabled = !checkbox.checked; });
   deleteBtn.addEventListener('click', async () => {
-    if (!window.confirm('Última confirmación: se borrarán TODOS tus datos de este dispositivo. ¿Continuar?')) return;
+    const ok = await openConfirmSheet('Última confirmación: se borrarán TODOS tus datos de este dispositivo. ¿Continuar?', { confirmLabel: 'Borrar todo' });
+    if (!ok) return;
     await repo.clearAllData();
     toast('Todos los datos han sido borrados');
     navigate('/home');

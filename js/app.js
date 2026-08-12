@@ -5,19 +5,28 @@ import { renderWorkoutNew } from './views/workout-new.js';
 import { renderWorkoutSession } from './views/workout-session.js';
 import { renderWorkoutHistory } from './views/workout-history.js';
 import { renderTemplateDetail } from './views/templates.js';
+import { renderProgressHub } from './views/progress-hub.js';
 import { renderBodyWeight } from './views/bodyweight.js';
-import { renderMeasurements } from './views/measurements.js';
+import { renderMeasurements, renderMeasurementDetail } from './views/measurements.js';
 import { renderSkinfold } from './views/skinfold.js';
 import { renderAiAnalysis } from './views/ai-analysis.js';
 import { renderSettingsBackup } from './views/settings-backup.js';
+import { renderSettingsHub } from './views/settings-hub.js';
+import { hasExistingUserData, runOnboarding } from './views/onboarding.js';
 import { NAV_ICONS } from './core/ui.js';
+import { on } from './core/store.js';
+import * as settings from './core/settings.js';
 
-const TABS = [
+const ALL_TABS = [
   { key: 'home', label: 'Inicio', icon: NAV_ICONS.home, path: '/home' },
   { key: 'entreno', label: 'Entreno', icon: NAV_ICONS.entreno, path: '/entreno' },
   { key: 'progreso', label: 'Progreso', icon: NAV_ICONS.progreso, path: '/progreso' },
-  { key: 'datos', label: 'Datos', icon: NAV_ICONS.datos, path: '/datos' },
+  { key: 'ajustes', label: 'Ajustes', icon: NAV_ICONS.settings, path: '/ajustes' },
 ];
+
+function visibleTabs() {
+  return ALL_TABS.filter((t) => t.key !== 'progreso' || settings.isAnyProgressSectionEnabled());
+}
 
 const ENTRENO_SUBTABS = [
   { key: 'entrenamientos', label: 'Entrenamientos', path: '/entreno' },
@@ -25,11 +34,16 @@ const ENTRENO_SUBTABS = [
 ];
 
 const PROGRESO_SUBTABS = [
-  { key: 'peso', label: 'Peso', path: '/progreso/peso' },
-  { key: 'medidas', label: 'Medidas', path: '/progreso/medidas' },
-  { key: 'plicometro', label: 'Plicómetro', path: '/progreso/plicometro' },
-  { key: 'ia', label: 'Análisis IA', path: '/progreso/ia' },
+  { key: 'resumen', label: 'Resumen', path: '/progreso', sectionKey: 'general' },
+  { key: 'peso', label: 'Peso', path: '/progreso/peso', sectionKey: 'peso' },
+  { key: 'medidas', label: 'Medidas', path: '/progreso/medidas', sectionKey: 'medidas' },
+  { key: 'plicometro', label: 'Plicómetro', path: '/progreso/plicometro', sectionKey: 'plicometro' },
 ];
+
+function visibleProgresoSubtabs() {
+  const sections = settings.getProgressSections();
+  return PROGRESO_SUBTABS.filter((s) => sections[s.sectionKey]);
+}
 
 function parseHash() {
   const hash = location.hash.replace(/^#/, '') || '/home';
@@ -44,20 +58,34 @@ function matchRoute(segments) {
   if (root === 'entreno') {
     if (!sub) return { view: renderWorkoutHistory, tab: 'entreno', subtab: 'entrenamientos' };
     if (sub === 'ejercicios') return { view: renderExerciseLibrary, tab: 'entreno', subtab: 'ejercicios' };
-    if (sub === 'nuevo') return { view: renderWorkoutNew, tab: 'entreno', subtab: 'entrenamientos' };
-    if (sub === 'sesion' && param) return { view: renderWorkoutSession, tab: 'entreno', subtab: 'entrenamientos', params: { workoutId: param } };
+    if (sub === 'nuevo') return { view: renderWorkoutNew, tab: 'entreno', subtab: 'entrenamientos', params: { presetDate: param || null } };
+    if (sub === 'sesion' && param) return { view: renderWorkoutSession, tab: 'entreno', subtab: null, focusMode: true, params: { workoutId: param } };
     if (sub === 'plantilla' && param) return { view: renderTemplateDetail, tab: 'entreno', subtab: 'entrenamientos', params: { templateId: param } };
     if (sub === 'ejercicio' && param) return { view: renderExerciseDetail, tab: 'entreno', subtab: 'ejercicios', params: { exerciseId: param } };
   }
 
   if (root === 'progreso') {
-    if (!sub || sub === 'peso') return { view: renderBodyWeight, tab: 'progreso', subtab: 'peso' };
-    if (sub === 'medidas') return { view: renderMeasurements, tab: 'progreso', subtab: 'medidas' };
-    if (sub === 'plicometro') return { view: renderSkinfold, tab: 'progreso', subtab: 'plicometro' };
-    if (sub === 'ia') return { view: renderAiAnalysis, tab: 'progreso', subtab: 'ia' };
+    const sections = settings.getProgressSections();
+    if (!sub) {
+      if (sections.general) return { view: renderProgressHub, tab: 'progreso', subtab: 'resumen' };
+      if (sections.peso) return { view: renderBodyWeight, tab: 'progreso', subtab: 'peso' };
+      if (sections.medidas) return { view: renderMeasurements, tab: 'progreso', subtab: 'medidas' };
+      if (sections.plicometro) return { view: renderSkinfold, tab: 'progreso', subtab: 'plicometro' };
+      return { view: renderHome, tab: 'home' };
+    }
+    if (sub === 'peso' && sections.peso) return { view: renderBodyWeight, tab: 'progreso', subtab: 'peso' };
+    if (sub === 'medidas' && param && sections.medidas) return { view: renderMeasurementDetail, tab: 'progreso', subtab: 'medidas', params: { typeId: param } };
+    if (sub === 'medidas' && sections.medidas) return { view: renderMeasurements, tab: 'progreso', subtab: 'medidas' };
+    if (sub === 'plicometro' && sections.plicometro) return { view: renderSkinfold, tab: 'progreso', subtab: 'plicometro' };
+    if (sub === 'ia') return { view: renderAiAnalysis, tab: 'progreso', subtab: null };
   }
 
-  if (root === 'datos') return { view: renderSettingsBackup, tab: 'datos' };
+  if (root === 'ajustes') {
+    if (!sub) return { view: renderSettingsHub, tab: 'ajustes' };
+    if (sub === 'datos') return { view: renderSettingsBackup, tab: 'ajustes' };
+  }
+
+  if (root === 'datos') return { view: renderSettingsBackup, tab: 'ajustes' }; // alias legado
 
   return { view: renderHome, tab: 'home' };
 }
@@ -74,15 +102,21 @@ function renderShell() {
   `;
 }
 
+let currentTab = null;
+
 function renderBottomNav(activeTab) {
+  currentTab = activeTab;
   const nav = document.getElementById('bottom-nav');
-  nav.innerHTML = TABS.map((tab) => `
-    <a class="nav-item ${tab.key === activeTab ? 'active' : ''}" href="#${tab.path}">
-      ${tab.icon}
-      <span>${tab.label}</span>
+  nav.innerHTML = visibleTabs().map((tab) => `
+    <a class="nav-item ${tab.key === activeTab ? 'active' : ''}" href="#${tab.path}" aria-label="${tab.label}" title="${tab.label}">
+      <span class="nav-icon">${tab.icon}</span>
     </a>
   `).join('');
 }
+
+on('prefs:changed', ({ key }) => {
+  if (key === 'progressSections') renderBottomNav(currentTab);
+});
 
 function renderSubtabs(container, subtabs, activeSubtab) {
   if (!subtabs) return;
@@ -101,10 +135,16 @@ async function renderRoute() {
   view.innerHTML = '';
   view.scrollTop = 0;
 
-  renderBottomNav(match.tab);
+  document.getElementById('bottom-nav').style.display = match.focusMode ? 'none' : '';
+  view.classList.toggle('view--focus', !!match.focusMode);
+  currentTab = match.tab;
+  if (!match.focusMode) renderBottomNav(match.tab);
 
   if (match.tab === 'entreno' && match.subtab) renderSubtabs(view, ENTRENO_SUBTABS, match.subtab);
-  if (match.tab === 'progreso' && match.subtab) renderSubtabs(view, PROGRESO_SUBTABS, match.subtab);
+  if (match.tab === 'progreso' && match.subtab) {
+    const subtabs = visibleProgresoSubtabs();
+    if (subtabs.length > 1) renderSubtabs(view, subtabs, match.subtab);
+  }
 
   const mount = document.createElement('div');
   mount.className = 'view-enter';
@@ -119,7 +159,17 @@ async function renderRoute() {
 }
 
 window.addEventListener('hashchange', renderRoute);
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+  await settings.loadSettingsCache();
+  if (!settings.isOnboardingCompleted()) {
+    if (await hasExistingUserData()) {
+      // Instalación previa a la existencia del onboarding: no mostrarlo nunca,
+      // solo marcar el flag en silencio.
+      await settings.setOnboardingCompleted(true);
+    } else {
+      await runOnboarding();
+    }
+  }
   renderShell();
   renderRoute();
 });

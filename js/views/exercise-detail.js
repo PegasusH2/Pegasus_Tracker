@@ -4,6 +4,8 @@ import { compareSessions } from '../core/progression.js';
 import { formatDate, formatDateShort, relativeDays, formatNumber } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
 import { renderInsightCallout, getChartThemeColors } from '../core/ui.js';
+import { getWeightProgressUnit } from '../core/settings.js';
+import { toUnit, roundForDisplay } from '../core/units.js';
 import { navigate } from '../app.js';
 
 const PERIODS = [
@@ -33,7 +35,9 @@ export async function renderExerciseDetail(mount, { exerciseId }) {
   }
 
   const history = await repo.getExerciseHistory(exerciseId); // más reciente primero
-  const records = bestRecordsFromHistory(history);
+  const records = bestRecordsFromHistory(history, { loadMode: exercise.loadMode });
+  const unit = getWeightProgressUnit();
+  const conv = (kg, decimals = 1) => (kg == null ? null : roundForDisplay(toUnit(kg, unit), decimals));
 
   mount.innerHTML = `
     <h1 class="type-title">${escapeHtml(exercise.name)}</h1>
@@ -44,8 +48,8 @@ export async function renderExerciseDetail(mount, { exerciseId }) {
     <div class="stat-hero">
       <div class="type-caption text-dim">Mejor peso</div>
       <div class="stat-hero-value">
-        <span class="type-hero">${records.bestWeight ?? '—'}</span>
-        ${records.bestWeight != null ? '<span class="type-headline text-dim">kg</span>' : ''}
+        <span class="type-hero">${conv(records.bestWeight) ?? '—'}</span>
+        ${records.bestWeight != null ? `<span class="type-headline text-dim">${unit}</span>` : ''}
       </div>
       <div class="type-caption text-faint">${records.bestWeightEntry ? `${records.bestWeightEntry.set.reps} reps · ${formatDateShort(records.bestWeightEntry.date)}` : ''}</div>
     </div>
@@ -53,18 +57,18 @@ export async function renderExerciseDetail(mount, { exerciseId }) {
     <div class="card stat-grid" style="margin-bottom:var(--space-5);">
       <div class="stat-tile">
         <div class="stat-label">Mejor volumen (sesión)</div>
-        <div class="stat-value">${records.bestVolumeSession != null ? formatNumber(records.bestVolumeSession, 0) : '—'}</div>
-        <div class="stat-sub">kg totales</div>
+        <div class="stat-value">${records.bestVolumeSession != null ? formatNumber(conv(records.bestVolumeSession, 0), 0) : '—'}</div>
+        <div class="stat-sub">${unit} totales</div>
       </div>
       <div class="stat-tile">
         <div class="stat-label">Más repeticiones</div>
         <div class="stat-value">${records.bestReps ?? '—'}</div>
-        <div class="stat-sub">${records.bestRepsEntry ? `${records.bestRepsEntry.set.weight}kg · ${formatDateShort(records.bestRepsEntry.date)}` : ''}</div>
+        <div class="stat-sub">${records.bestRepsEntry ? `${conv(records.bestRepsEntry.set.weight)}${unit} · ${formatDateShort(records.bestRepsEntry.date)}` : ''}</div>
       </div>
       <div class="stat-tile">
         <div class="stat-label">1RM estimado</div>
-        <div class="stat-value">${records.best1RM != null ? formatNumber(records.best1RM, 1) : '—'}</div>
-        <div class="stat-sub">orientativo (Epley)</div>
+        <div class="stat-value">${records.best1RM != null ? formatNumber(conv(records.best1RM), 1) : '—'}</div>
+        <div class="stat-sub">${records.best1RM != null ? `${unit} · orientativo (Epley)` : 'orientativo (Epley)'}</div>
       </div>
       <div class="stat-tile">
         <div class="stat-label">Sesiones registradas</div>
@@ -95,35 +99,35 @@ export async function renderExerciseDetail(mount, { exerciseId }) {
 
   if (!history.length) return;
 
-  renderComparison(mount, history);
-  renderHistoryList(mount, history);
+  renderComparison(mount, history, unit, exercise.loadMode);
+  renderHistoryList(mount, history, unit);
 
   mount.querySelector('#period-selector').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-period]');
     if (!btn) return;
     state.period = btn.dataset.period;
     mount.querySelectorAll('#period-selector .period-chip').forEach((b) => b.classList.toggle('active', b === btn));
-    renderTrendChart(mount, history);
+    renderTrendChart(mount, history, unit, exercise.loadMode);
   });
   mount.querySelector('#metric-selector').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-metric]');
     if (!btn) return;
     state.metric = btn.dataset.metric;
     mount.querySelectorAll('#metric-selector .seg').forEach((b) => b.classList.toggle('active', b === btn));
-    renderTrendChart(mount, history);
+    renderTrendChart(mount, history, unit, exercise.loadMode);
   });
 
-  renderTrendChart(mount, history);
+  renderTrendChart(mount, history, unit, exercise.loadMode);
 }
 
-function renderComparison(mount, history) {
+function renderComparison(mount, history, unit, loadMode) {
   const box = mount.querySelector('#comparison-box');
   const [latest, previous] = history;
   if (!latest || !previous) {
     box.innerHTML = `<div class="type-body text-dim">Necesitas al menos dos sesiones para comparar.</div>`;
     return;
   }
-  const comparison = compareSessions(latest.sets, previous.sets);
+  const comparison = compareSessions(latest.sets, previous.sets, { unit, loadMode });
   box.innerHTML = `
     <div class="type-caption text-faint" style="margin-bottom:8px;">
       ${relativeDays(latest.workout.date)} vs. ${relativeDays(previous.workout.date)}
@@ -134,14 +138,14 @@ function renderComparison(mount, history) {
   `;
 }
 
-function renderHistoryList(mount, history) {
+function renderHistoryList(mount, history, unit) {
   const list = mount.querySelector('#history-list');
   list.innerHTML = `<div class="grouped-list">${history.map((entry) => `
     <div class="grouped-row" data-workout-id="${entry.workout.id}" style="cursor:pointer;">
       <div>
         <div class="type-body" style="font-weight:600;">${formatDate(entry.workout.date)}</div>
         <div class="type-caption text-faint">
-          ${entry.sets.filter((s) => s.weight != null).map((s) => `${s.weight}×${s.reps}${s.rir != null ? ` (RIR ${s.rir})` : ''}`).join(' · ') || 'Sin datos'}
+          ${entry.sets.filter((s) => s.weight != null).map((s) => `${roundForDisplay(toUnit(s.weight, unit), 1)}×${s.reps}${s.rir != null ? ` (RIR ${s.rir})` : ''}`).join(' · ') || 'Sin datos'}
         </div>
       </div>
       <span class="text-faint">›</span>
@@ -152,10 +156,11 @@ function renderHistoryList(mount, history) {
   });
 }
 
-function renderTrendChart(mount, history) {
+function renderTrendChart(mount, history, unit, loadMode) {
   const filtered = filterHistoryByPeriod(history, state.period);
-  const series = trendSeries(filtered, state.metric).filter((p) => p.value != null);
+  const series = trendSeries(filtered, state.metric, { loadMode }).filter((p) => p.value != null);
   const metricInfo = METRICS.find((m) => m.key === state.metric);
+  const isWeightMetric = metricInfo.unit === 'kg';
 
   const label = mount.querySelector('#trend-label');
   const direction = trendDirection(series.map((p) => p.value));
@@ -176,8 +181,8 @@ function renderTrendChart(mount, history) {
     data: {
       labels: series.map((p) => formatDateShort(p.date)),
       datasets: [{
-        label: metricInfo.label,
-        data: series.map((p) => p.value),
+        label: isWeightMetric ? `${metricInfo.label} (${unit})` : metricInfo.label,
+        data: series.map((p) => (isWeightMetric ? toUnit(p.value, unit) : p.value)),
         borderColor: colors.accent,
         backgroundColor: colors.accentSoft,
         tension: 0.3,

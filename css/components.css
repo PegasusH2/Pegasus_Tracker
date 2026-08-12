@@ -65,15 +65,29 @@
 .last-session-empty { color: var(--text-tertiary); font-size: 14px; }
 
 /* Filas de serie — lista deportiva, no tabla */
+.set-group { border-bottom: 0.5px solid var(--border); }
+.set-group:last-child { border-bottom: none; }
 .set-row {
   display: grid;
   grid-template-columns: 20px 1fr 1fr 1fr 26px 22px;
   align-items: center;
   gap: var(--space-2);
   padding: 12px 0;
-  border-bottom: 0.5px solid var(--border);
 }
-.set-row:last-child { border-bottom: none; }
+/* kg y lb como columnas independientes necesitan algo más de sitio que reps/RIR */
+.set-row.set-row--dual-unit { grid-template-columns: 20px 1.7fr 1fr 1fr 26px 22px; gap: 6px; }
+.set-group .set-row { padding-bottom: 2px; }
+.set-total {
+  text-align: right;
+  padding: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.set-total-toggle {
+  color: var(--accent);
+  font-weight: 700;
+  padding: 2px 4px;
+}
 .set-row .set-idx {
   color: var(--text-tertiary);
   font-size: 13px;
@@ -90,6 +104,11 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+/* Columnas kg/lb independientes — cada serie se rellena en la que
+   corresponda a sus discos; la otra se calcula en vivo como referencia. */
+.set-weight-dual { flex-direction: row; gap: 4px; }
+.set-weight-col { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1; min-width: 0; }
+.set-weight-col input { font-size: 15px; }
 .set-row input {
   background: transparent;
   border: none;
@@ -225,6 +244,70 @@
   white-space: nowrap;
 }
 
+/* Calendario mensual de entrenamientos — representa sesiones realizadas */
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+.cal-title {
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: capitalize;
+  color: var(--text);
+}
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-2);
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  touch-action: manipulation;
+}
+.cal-day {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.cal-day:active { background: var(--surface-2); }
+.cal-day.is-outside { color: var(--text-tertiary); opacity: 0.4; }
+.cal-day-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+}
+.cal-day.is-today .cal-day-num { background: var(--accent); color: var(--accent-contrast); }
+.cal-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.cal-day.has-multiple .cal-dot { width: 14px; height: 5px; border-radius: var(--radius-pill); }
+
 /* Selector de icono (emoji) para plantillas */
 .icon-picker {
   display: flex;
@@ -263,12 +346,7 @@
 .icon-badge--lg { width: 56px; height: 56px; font-size: 26px; }
 .icon-badge--lg svg { width: 24px; height: 24px; }
 
-.icon-badge--blue { background: var(--cat-blue-soft); color: var(--cat-blue); }
-.icon-badge--purple { background: var(--cat-purple-soft); color: var(--cat-purple); }
-.icon-badge--amber { background: var(--cat-amber-soft); color: var(--cat-amber); }
-.icon-badge--teal { background: var(--cat-teal-soft); color: var(--cat-teal); }
-.icon-badge--pink { background: var(--cat-pink-soft); color: var(--cat-pink); }
-.icon-badge--green { background: var(--accent-soft); color: var(--accent); }
+.icon-badge--accent { background: var(--accent-soft); color: var(--accent); }
 
 .quick-action { text-align: left; }
 .quick-action:active { opacity: 0.6; }

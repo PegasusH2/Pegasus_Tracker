@@ -1,6 +1,6 @@
 import * as repo from '../db/repository.js';
-import { openSheet } from '../core/ui.js';
-import { toast, confirmDialog } from '../core/store.js';
+import { openSheet, openConfirmSheet } from '../core/ui.js';
+import { toast } from '../core/store.js';
 import { escapeHtml } from '../core/escape.js';
 import { navigate } from '../app.js';
 
@@ -80,6 +80,16 @@ function openExerciseForm(mount, existing) {
       <input type="text" id="f-muscle" value="${escapeAttr(existing?.muscleGroup || '')}" placeholder="Ej. Pecho" />
     </div>
     <div class="field">
+      <label class="label">Cómo se registra el peso</label>
+      <div class="segmented" id="f-load-mode">
+        <button type="button" class="seg ${(existing?.loadMode ?? 'total') === 'total' ? 'active' : ''}" data-mode="total">Peso total</button>
+        <button type="button" class="seg ${existing?.loadMode === 'perSide' ? 'active' : ''}" data-mode="perSide">Por lado/mancuerna</button>
+      </div>
+      <div class="type-caption text-faint" style="margin-top:4px;">
+        "Por lado" duplica el peso registrado al calcular el volumen total (ej. mancuernas de 20 kg × 2).
+      </div>
+    </div>
+    <div class="field">
       <label class="label">Notas (opcional)</label>
       <textarea id="f-notes" rows="2">${escapeHtml(existing?.notes || '')}</textarea>
     </div>
@@ -92,15 +102,30 @@ function openExerciseForm(mount, existing) {
     ` : ''}
   `, {
     onMount: (sheet, close) => {
+      sheet.querySelector('#f-load-mode').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-mode]');
+        if (!btn) return;
+        sheet.querySelectorAll('#f-load-mode .seg').forEach((b) => b.classList.toggle('active', b === btn));
+      });
+
       sheet.querySelector('#f-save').addEventListener('click', async () => {
         const name = sheet.querySelector('#f-name').value.trim();
         if (!name) { toast('El nombre es obligatorio'); return; }
         const muscleGroup = sheet.querySelector('#f-muscle').value.trim();
         const notes = sheet.querySelector('#f-notes').value.trim();
+        const loadMode = sheet.querySelector('#f-load-mode .seg.active')?.dataset.mode ?? 'total';
         if (isEdit) {
-          await repo.updateExercise(existing.id, { name, muscleGroup, notes });
+          if (loadMode !== (existing.loadMode ?? 'total')) {
+            const history = await repo.getExerciseHistory(existing.id);
+            if (history.length) {
+              close();
+              const ok = await openConfirmSheet('Esto cambiará cómo se calcula el volumen de las sesiones ya registradas de este ejercicio. ¿Continuar?', { confirmLabel: 'Continuar' });
+              if (!ok) return;
+            }
+          }
+          await repo.updateExercise(existing.id, { name, muscleGroup, notes, loadMode });
         } else {
-          await repo.createExercise({ name, muscleGroup, notes });
+          await repo.createExercise({ name, muscleGroup, notes, loadMode });
         }
         close();
         await renderList(mount);
@@ -114,9 +139,10 @@ function openExerciseForm(mount, existing) {
       });
 
       sheet.querySelector('#f-delete')?.addEventListener('click', async () => {
-        if (!confirmDialog(`¿Eliminar "${existing.name}"? Esto no elimina los entrenamientos pasados, pero perderás la ficha del ejercicio.`)) return;
-        await repo.deleteExercise(existing.id);
         close();
+        const ok = await openConfirmSheet(`¿Eliminar "${existing.name}"? Esto no elimina los entrenamientos pasados, pero perderás la ficha del ejercicio.`, { confirmLabel: 'Eliminar' });
+        if (!ok) return;
+        await repo.deleteExercise(existing.id);
         await renderList(mount);
         toast('Ejercicio eliminado');
       });

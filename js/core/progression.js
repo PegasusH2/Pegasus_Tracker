@@ -1,3 +1,5 @@
+import { formatWeightUnit } from './units.js';
+
 // Motor de progresión y análisis de RIR — 100% local, sin IA, sin red.
 //
 // Regla central (ver especificación): la progresión no depende solo del peso.
@@ -9,8 +11,12 @@
 // Y se avisa (sin penalizar) cuando:
 //   - mismo peso + mismas reps + RIR menor (mismo trabajo, más esfuerzo)
 
-export function sessionVolume(sets) {
-  return sets.reduce((sum, s) => sum + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0);
+// loadMode 'perSide' duplica el peso registrado (mancuerna/lado) al calcular
+// la carga total — el peso guardado en cada serie nunca cambia, solo se
+// reinterpreta al leer, según el ejercicio al que pertenece.
+export function sessionVolume(sets, { loadMode = 'total' } = {}) {
+  const mult = loadMode === 'perSide' ? 2 : 1;
+  return sets.reduce((sum, s) => sum + (Number(s.weight) || 0) * mult * (Number(s.reps) || 0), 0);
 }
 
 function sign(n) {
@@ -48,14 +54,14 @@ export function compareSetPair(curr, prev) {
 // compareVolume=false omite el aviso de volumen — útil mientras una sesión todavía
 // se está registrando (menos series que la vez anterior), para no mostrar un
 // "tu volumen ha bajado" que solo refleja que aún no has terminado de anotar series.
-export function compareSessions(currentSets, previousSets, { compareVolume = true } = {}) {
+export function compareSessions(currentSets, previousSets, { compareVolume = true, unit = 'kg', loadMode = 'total' } = {}) {
   const perSet = currentSets.map((curr, i) => ({
     setNumber: curr.setNumber ?? i + 1,
     ...compareSetPair(curr, previousSets[i]),
   }));
 
-  const volCurrent = sessionVolume(currentSets);
-  const volPrevious = sessionVolume(previousSets);
+  const volCurrent = sessionVolume(currentSets, { loadMode });
+  const volPrevious = sessionVolume(previousSets, { loadMode });
   const volumeChangePercent = volPrevious > 0 ? ((volCurrent - volPrevious) / volPrevious) * 100 : null;
 
   let bestSetComparison = null;
@@ -77,11 +83,11 @@ export function compareSessions(currentSets, previousSets, { compareVolume = tru
     volumePrevious: volPrevious,
     volumeChangePercent,
     bestSetComparison,
-    insights: buildInsights(perSet, compareVolume ? volumeChangePercent : null, bestSetComparison),
+    insights: buildInsights(perSet, compareVolume ? volumeChangePercent : null, bestSetComparison, unit),
   };
 }
 
-function buildInsights(perSet, volumeChangePercent, bestSetComparison) {
+function buildInsights(perSet, volumeChangePercent, bestSetComparison, unit = 'kg') {
   const insights = [];
   const comparable = perSet.filter((r) => r.type !== 'incomplete' && r.type !== 'no_data');
 
@@ -89,17 +95,18 @@ function buildInsights(perSet, volumeChangePercent, bestSetComparison) {
     r.curr.weight === comparable[0].curr.weight && r.curr.reps === comparable[0].curr.reps);
 
   if (comparable.length === 0 && bestSetComparison) {
-    insights.push(...insightsForType(bestSetComparison, { wholeSession: false, isBestSetFallback: true }));
+    insights.push(...insightsForType(bestSetComparison, { wholeSession: false, isBestSetFallback: true, unit }));
   } else if (comparable.length > 0 && sameWeightAndReps && comparable.every((r) => r.type === comparable[0].type)) {
     // Todas las series comparten peso, reps y patrón de cambio: un único mensaje consolidado.
     insights.push(...insightsForType(comparable[0], {
       wholeSession: true,
       first: comparable[0],
       last: comparable[comparable.length - 1],
+      unit,
     }));
   } else {
     for (const r of comparable) {
-      const setInsights = insightsForType(r, { wholeSession: false });
+      const setInsights = insightsForType(r, { wholeSession: false, unit });
       insights.push(...setInsights);
     }
   }
@@ -117,26 +124,28 @@ function buildInsights(perSet, volumeChangePercent, bestSetComparison) {
 }
 
 function insightsForType(r, ctx) {
-  const w = r.curr?.weight;
+  const unit = ctx.unit ?? 'kg';
+  const w = formatWeightUnit(r.curr?.weight, unit);
+  const prevW = formatWeightUnit(r.prev?.weight, unit);
   const reps = r.curr?.reps;
   const setLabel = ctx.wholeSession ? '' : ` (Serie ${r.setNumber})`;
 
   switch (r.type) {
     case 'big_progress':
-      return [{ level: 'good', text: `🟢 Más peso y más repeticiones${setLabel}: ${w}kg × ${reps}. Progresión destacada.` }];
+      return [{ level: 'good', text: `🟢 Más peso y más repeticiones${setLabel}: ${w} × ${reps}. Progresión destacada.` }];
     case 'more_reps':
-      return [{ level: 'good', text: `🟢 Has hecho ${reps - r.prev.reps} repetición(es) más con el mismo peso (${w}kg)${setLabel}.` }];
+      return [{ level: 'good', text: `🟢 Has hecho ${reps - r.prev.reps} repetición(es) más con el mismo peso (${w})${setLabel}.` }];
     case 'more_weight':
-      return [{ level: 'good', text: `🟢 Has subido el peso manteniendo las repeticiones (${r.prev.weight}kg → ${w}kg)${setLabel}.` }];
+      return [{ level: 'good', text: `🟢 Has subido el peso manteniendo las repeticiones (${prevW} → ${w})${setLabel}.` }];
     case 'rir_improved': {
       if (ctx.wholeSession) {
-        return [{ level: 'good', text: `🟢 Has mantenido ${w}kg × ${reps} y tu RIR ha aumentado de ${ctx.first.prev.rir} a ${ctx.last.curr.rir}. Mismo trabajo, menor esfuerzo.` }];
+        return [{ level: 'good', text: `🟢 Has mantenido ${w} × ${reps} y tu RIR ha aumentado de ${ctx.first.prev.rir} a ${ctx.last.curr.rir}. Mismo trabajo, menor esfuerzo.` }];
       }
       return [{ level: 'good', text: `🟢 Mismo peso y repeticiones con mejor RIR (${r.prev.rir} → ${r.curr.rir})${setLabel}.` }];
     }
     case 'rir_worse': {
       if (ctx.wholeSession) {
-        return [{ level: 'warn', text: `🟠 Mismo peso y repeticiones (${w}kg × ${reps}), pero tu RIR ha bajado de ${ctx.first.prev.rir} a ${ctx.last.curr.rir}. Mismo trabajo, más esfuerzo.` }];
+        return [{ level: 'warn', text: `🟠 Mismo peso y repeticiones (${w} × ${reps}), pero tu RIR ha bajado de ${ctx.first.prev.rir} a ${ctx.last.curr.rir}. Mismo trabajo, más esfuerzo.` }];
       }
       return [{ level: 'warn', text: `🟠 Mismo peso y repeticiones, pero tu RIR ha bajado (${r.prev.rir} → ${r.curr.rir})${setLabel}.` }];
     }

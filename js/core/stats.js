@@ -6,7 +6,10 @@ export function estimate1RM(weight, reps) {
 }
 
 // history: array de {workout, sets}, en cualquier orden.
-export function bestRecordsFromHistory(history) {
+// loadMode 'perSide' duplica el peso al calcular volumen (mancuerna/lado) —
+// bestWeight/bestReps/best1RM siguen basados en el peso crudo por serie.
+export function bestRecordsFromHistory(history, { loadMode = 'total' } = {}) {
+  const mult = loadMode === 'perSide' ? 2 : 1;
   let bestWeight = null, bestWeightEntry = null;
   let bestVolumeSession = null;
   let best1RM = null, best1RMEntry = null;
@@ -16,7 +19,7 @@ export function bestRecordsFromHistory(history) {
     let sessionVol = 0;
     for (const s of entry.sets) {
       if (s.weight == null || s.reps == null) continue;
-      sessionVol += s.weight * s.reps;
+      sessionVol += s.weight * mult * s.reps;
 
       if (bestWeight == null || s.weight > bestWeight) {
         bestWeight = s.weight;
@@ -40,9 +43,14 @@ export function bestRecordsFromHistory(history) {
   return { bestWeight, bestWeightEntry, bestVolumeSession, best1RM, best1RMEntry, bestReps, bestRepsEntry };
 }
 
+const PERIOD_DAYS = {
+  '4w': 28, '8w': 56, '12w': 84, '6m': 182, '1y': 365,
+  '7d': 7, '30d': 30, '3m': 90,
+};
+
 export function periodToCutoffISO(periodKey) {
   if (periodKey === 'all') return null;
-  const days = { '4w': 28, '8w': 56, '12w': 84, '6m': 182, '1y': 365 }[periodKey] ?? 84;
+  const days = PERIOD_DAYS[periodKey] ?? 84;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   return cutoff.toISOString().slice(0, 10);
@@ -62,13 +70,14 @@ export function filterByPeriodGeneric(items, periodKey, getDate = (i) => i.date)
 }
 
 // metric: 'totalVolume' | 'topWeight' | 'topReps' | 'avgRir'
-export function trendSeries(history, metric) {
+export function trendSeries(history, metric, { loadMode = 'total' } = {}) {
+  const mult = loadMode === 'perSide' ? 2 : 1;
   const sorted = [...history].sort((a, b) => (a.workout.date < b.workout.date ? -1 : 1));
   return sorted.map((entry) => {
     const validSets = entry.sets.filter((s) => s.weight != null && s.reps != null);
     let value = null;
     if (metric === 'totalVolume') {
-      value = validSets.reduce((sum, s) => sum + s.weight * s.reps, 0);
+      value = validSets.reduce((sum, s) => sum + s.weight * mult * s.reps, 0);
     } else if (metric === 'topWeight') {
       value = validSets.length ? Math.max(...validSets.map((s) => s.weight)) : null;
     } else if (metric === 'topReps') {
@@ -116,5 +125,38 @@ export function bodyWeightStats(entriesDesc) {
   const monthAgoEntry = entriesDesc.find((e) => (nowMs - new Date(e.date).getTime()) >= 28 * 86400000);
   const monthlyChange = monthAgoEntry ? current - monthAgoEntry.weightKg : null;
 
-  return { current, weeklyAvg, weeklyChange, monthlyChange };
+  const initial = entriesDesc[entriesDesc.length - 1].weightKg;
+  const initialDate = entriesDesc[entriesDesc.length - 1].date;
+  const changeAbs = current - initial;
+  const changePercent = initial ? (changeAbs / initial) * 100 : null;
+
+  return { current, weeklyAvg, weeklyChange, monthlyChange, initial, initialDate, changeAbs, changePercent };
+}
+
+// Valor representativo de una medición: el valor único, o la media de ambos
+// lados si es bilateral (para gráficas/tendencia agregada).
+export function measurementValue(m) {
+  if (m.value != null) return m.value;
+  if (m.valueLeft != null && m.valueRight != null) return (m.valueLeft + m.valueRight) / 2;
+  return m.valueLeft ?? m.valueRight ?? null;
+}
+
+// Estimación orientativa de % graso — fórmula de Jackson & Pollock (7 pliegues).
+// NUNCA presentar como medición médica exacta.
+export function estimateBodyFatJP7(sumMm) {
+  if (sumMm == null) return null;
+  return 3.64 + sumMm * 0.097;
+}
+
+export function changeSinceFirst(current, initial) {
+  if (current == null || initial == null) return { abs: null, percent: null };
+  const abs = current - initial;
+  const percent = initial ? (abs / initial) * 100 : null;
+  return { abs, percent };
+}
+
+// direction: 'up' | 'down' | 'flat' — SIN connotación de bueno/malo.
+export function neutralDirection(value, epsilon = 0.05) {
+  if (value == null || Math.abs(value) < epsilon) return 'flat';
+  return value > 0 ? 'up' : 'down';
 }

@@ -16,12 +16,13 @@ export async function getExercise(id) {
   return db.exercises.get(id);
 }
 
-export async function createExercise({ name, muscleGroup = '', notes = '' }) {
+export async function createExercise({ name, muscleGroup = '', notes = '', loadMode = 'total' }) {
   const exercise = {
     id: newId(),
     name: name.trim(),
     muscleGroup,
     notes,
+    loadMode,
     archived: false,
     createdAt: new Date().toISOString(),
   };
@@ -82,6 +83,19 @@ export async function listWorkouts({ limit } = {}) {
 
 export async function getWorkoutExerciseCount(workoutId) {
   return db.workoutExercises.where('workoutId').equals(workoutId).count();
+}
+
+// Agrupa los workouts de un mes por fecha exacta: { 'YYYY-MM-DD': [workout, ...] }.
+// month: 0-11. Puede haber varias sesiones el mismo día (segundo entreno).
+export async function listWorkoutsByMonth(year, month) {
+  const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`;
+  const all = await listWorkouts();
+  const byDate = {};
+  for (const w of all) {
+    if (!w.date.startsWith(prefix)) continue;
+    (byDate[w.date] ||= []).push(w);
+  }
+  return byDate;
 }
 
 // Nº total de series registradas en entrenamientos cuya fecha cae en [fromISO, toISO].
@@ -308,6 +322,8 @@ export async function addSet(workoutExerciseId, values = {}) {
     workoutExerciseId,
     setNumber,
     weight: values.weight ?? null,
+    weightKgPart: values.weightKgPart ?? null,
+    weightLbPart: values.weightLbPart ?? null,
     reps: values.reps ?? null,
     rir: values.rir ?? null,
     rpe: values.rpe ?? null,
@@ -379,17 +395,38 @@ export async function listBodyWeight() {
   return (await db.bodyWeight.orderBy('date').toArray()).reverse();
 }
 
-// ---------- Medidas corporales ----------
-
-export async function listMeasurementTypes() {
-  return (await db.measurementTypes.toArray()).sort((a, b) => a.order - b.order);
+export async function getFirstBodyWeight() {
+  const all = await db.bodyWeight.orderBy('date').toArray();
+  return all[0] ?? null;
 }
 
-export async function createMeasurementType(name) {
+// ---------- Medidas corporales ----------
+// Cada tipo puede ser unilateral (value) o bilateral (valueLeft/valueRight).
+// "enabled" permite desactivar un tipo sin perder su histórico.
+
+export async function listMeasurementTypes({ includeDisabled = false } = {}) {
+  let items = (await db.measurementTypes.toArray()).sort((a, b) => a.order - b.order);
+  if (!includeDisabled) items = items.filter((t) => t.enabled !== false);
+  return items;
+}
+
+export async function getMeasurementType(id) {
+  return db.measurementTypes.get(id);
+}
+
+export async function createMeasurementType({ name, unit = 'cm', bilateral = false }) {
   const existing = await db.measurementTypes.toArray();
-  const type = { id: newId(), name, order: existing.length };
+  const type = { id: newId(), name: name.trim(), unit, bilateral, enabled: true, order: existing.length };
   await db.measurementTypes.add(type);
   return type;
+}
+
+export async function updateMeasurementType(id, changes) {
+  await db.measurementTypes.update(id, changes);
+}
+
+export async function setMeasurementTypeEnabled(id, enabled) {
+  await db.measurementTypes.update(id, { enabled });
 }
 
 export async function deleteMeasurementType(id) {
@@ -397,10 +434,14 @@ export async function deleteMeasurementType(id) {
   await db.measurementTypes.delete(id);
 }
 
-export async function addMeasurement({ typeId, date, valueCm, notes = '' }) {
-  const entry = { id: newId(), typeId, date, valueCm, notes };
+export async function addMeasurement({ typeId, date, value = null, valueLeft = null, valueRight = null, notes = '' }) {
+  const entry = { id: newId(), typeId, date, value, valueLeft, valueRight, notes };
   await db.measurements.add(entry);
   return entry;
+}
+
+export async function updateMeasurement(id, changes) {
+  await db.measurements.update(id, changes);
 }
 
 export async function deleteMeasurement(id) {
@@ -417,9 +458,13 @@ export async function listSkinfoldSites() {
   return (await db.skinfoldSites.toArray()).sort((a, b) => a.order - b.order);
 }
 
-export async function createSkinfoldSite(name) {
+export async function getSkinfoldSite(id) {
+  return db.skinfoldSites.get(id);
+}
+
+export async function createSkinfoldSite({ name, instructions = '' }) {
   const existing = await db.skinfoldSites.toArray();
-  const site = { id: newId(), name, order: existing.length };
+  const site = { id: newId(), name, instructions, order: existing.length };
   await db.skinfoldSites.add(site);
   return site;
 }
