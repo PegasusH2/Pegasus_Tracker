@@ -134,6 +134,8 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
   const enabledUnits = getWeightUnitsEnabled();
   const dualUnit = enabledUnits.kg && enabledUnits.lb;
   const soloUnit = enabledUnits.kg ? 'kg' : 'lb';
+  const isBarbell = exercise.equipmentType === 'barbell';
+  const bars = isBarbell ? await repo.listBars() : [];
 
   const completedCurrentSets = currentSets.filter((s) => s.weight != null && s.reps != null);
   const comparison = (completedCurrentSets.length && lastSets.length)
@@ -181,12 +183,31 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     return `
     <div class="set-group">
     <div class="set-type-row">
-      <button type="button" class="set-type-btn ${type !== 'normal' ? 'set-type-btn--active' : ''}" data-set-id="${s.id}">${setTypeLabel(type)} <span class="set-type-caret">▾</span></button>
+      <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+        <button type="button" class="set-type-btn ${type !== 'normal' ? 'set-type-btn--active' : ''}" data-set-id="${s.id}">${setTypeLabel(type)} <span class="set-type-caret">▾</span></button>
+        ${isBarbell ? `
+          <select class="input-bar-pick" data-set-id="${s.id}">
+            <option value="">Barra…</option>
+            ${bars.map((b) => `<option value="${b.weightKg}" ${s.barWeightKg === b.weightKg ? 'selected' : ''}>${escapeHtml(b.name)} (${b.weightKg} kg)</option>`).join('')}
+          </select>
+        ` : ''}
+      </div>
       ${rangeDone ? '<span class="set-range-done">✓ Rango completado</span>' : ''}
     </div>
-    <div class="set-row ${dualUnit ? 'set-row--dual-unit' : ''}" data-set-id="${s.id}">
+    <div class="set-row ${(dualUnit || isBarbell) ? 'set-row--dual-unit' : ''}" data-set-id="${s.id}">
       <span class="set-idx">${s.setNumber}</span>
-      ${dualUnit ? `
+      ${isBarbell ? `
+        <div class="set-field set-weight-dual">
+          <div class="set-weight-col">
+            <input type="number" inputmode="decimal" step="0.5" class="input-bar-weight" value="${s.barWeightKg ?? ''}" placeholder="0" />
+            <span class="set-unit">barra</span>
+          </div>
+          <div class="set-weight-col">
+            <input type="number" inputmode="decimal" step="0.5" class="input-plates" value="${s.plateWeightPerSideKg ?? ''}" placeholder="0" />
+            <span class="set-unit">disco/lado</span>
+          </div>
+        </div>
+      ` : dualUnit ? `
         <div class="set-field set-weight-dual">
           <div class="set-weight-col">
             <input type="number" inputmode="decimal" step="${inputStep('kg', 'set')}" class="input-weight-kgpart" value="${s.weightKgPart ?? ''}" placeholder="0" />
@@ -214,7 +235,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       <span class="set-check ${done ? 'done' : ''}">${CHECK_ICON}</span>
       <button class="set-remove">✕</button>
     </div>
-    ${dualUnit && s.weight != null ? `
+    ${(dualUnit || isBarbell) && s.weight != null ? `
       <div class="set-total">
         Total <button type="button" class="set-total-toggle" data-weight-kg="${s.weight}" data-unit="${defaultUnit}">${formatTotal(s.weight, defaultUnit)}</button>
       </div>
@@ -293,6 +314,18 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     });
   });
 
+  setsList.querySelectorAll('.input-bar-pick').forEach((select) => {
+    select.addEventListener('change', async (e) => {
+      const setId = e.target.dataset.setId;
+      const current = currentSets.find((s) => s.id === setId);
+      const barWeightKg = e.target.value === '' ? null : Number(e.target.value);
+      const plateWeightPerSideKg = current.plateWeightPerSideKg ?? null;
+      const weight = barWeightKg == null && plateWeightPerSideKg == null ? null : (barWeightKg ?? 0) + 2 * (plateWeightPerSideKg ?? 0);
+      await repo.updateSet(setId, { weight, barWeightKg, plateWeightPerSideKg });
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+    });
+  });
+
   setsList.querySelectorAll('.set-total-toggle').forEach((btn) => {
     btn.addEventListener('click', () => {
       const newUnit = btn.dataset.unit === 'kg' ? 'lb' : 'kg';
@@ -307,8 +340,26 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     const kgPartInput = row.querySelector('.input-weight-kgpart');
     const lbPartInput = row.querySelector('.input-weight-lbpart');
     const soloInput = row.querySelector('.input-weight');
+    const barWeightInput = row.querySelector('.input-bar-weight');
+    const platesInput = row.querySelector('.input-plates');
 
-    if (kgPartInput && lbPartInput) {
+    if (barWeightInput && platesInput) {
+      async function commitBarbell() {
+        const barRaw = barWeightInput.value;
+        const platesRaw = platesInput.value;
+        if (barRaw === '' && platesRaw === '') {
+          await repo.updateSet(setId, { weight: null, barWeightKg: null, plateWeightPerSideKg: null });
+        } else {
+          const barWeightKg = barRaw === '' ? 0 : Number(barRaw);
+          const plateWeightPerSideKg = platesRaw === '' ? 0 : Number(platesRaw);
+          const weight = barWeightKg + 2 * plateWeightPerSideKg;
+          await repo.updateSet(setId, { weight, barWeightKg: barRaw === '' ? null : barWeightKg, plateWeightPerSideKg: platesRaw === '' ? null : plateWeightPerSideKg });
+        }
+        await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+      }
+      barWeightInput.addEventListener('blur', commitBarbell);
+      platesInput.addEventListener('blur', commitBarbell);
+    } else if (kgPartInput && lbPartInput) {
       // kg y lb son componentes que se SUMAN (discos combinados) — cada uno
       // se guarda tal cual se escribe, sin recalcular el otro.
       async function commitParts() {
@@ -354,10 +405,13 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
   card.querySelector('.add-set').addEventListener('click', async (e) => {
     e.target.disabled = true; // evita duplicar el número de serie si se pulsa varias veces rápido
     const template = lastSets[currentSets.length];
+    const defaultBar = isBarbell && !template ? bars.find((b) => b.id === exercise.defaultBarId) : null;
     await repo.addSet(workoutExerciseId, {
       weight: template?.weight ?? null,
       weightKgPart: template?.weightKgPart ?? null,
       weightLbPart: template?.weightLbPart ?? null,
+      barWeightKg: template?.barWeightKg ?? defaultBar?.weightKg ?? null,
+      plateWeightPerSideKg: template?.plateWeightPerSideKg ?? null,
       reps: template?.reps ?? null,
     });
     await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
@@ -394,6 +448,9 @@ function formatTotal(weightKg, unit) {
 // (ej. "10 kg + 2,5 lb"); si no, el total simple en la unidad por defecto.
 function weightSummary(s, defaultUnit) {
   if (s.weight == null) return '—';
+  if (s.barWeightKg != null || s.plateWeightPerSideKg != null) {
+    return `${formatTotal(s.weight, 'kg')} (${s.barWeightKg ?? 0}+${s.plateWeightPerSideKg ?? 0}×2)`;
+  }
   if (s.weightKgPart != null && s.weightLbPart != null) {
     return `${s.weightKgPart} kg + ${s.weightLbPart} lb`;
   }

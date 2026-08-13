@@ -1,5 +1,6 @@
 import * as settings from '../core/settings.js';
-import { openSheet } from '../core/ui.js';
+import * as repo from '../db/repository.js';
+import { openSheet, openConfirmSheet } from '../core/ui.js';
 import { escapeHtml } from '../core/escape.js';
 import { toast } from '../core/store.js';
 import { navigate } from '../app.js';
@@ -88,12 +89,21 @@ function openPesosSheet() {
         <button type="button" class="seg ${progressUnit === 'lb' ? 'active' : ''}" data-unit="lb">lb</button>
       </div>
     </div>
+
+    <div class="grouped-list" style="margin-top:var(--space-5);">
+      <div class="grouped-row" id="row-barras" style="cursor:pointer;">
+        <span class="type-body" style="font-weight:600;">Barras</span>
+        <span class="text-faint">›</span>
+      </div>
+    </div>
   `, {
     onMount: (sheet) => {
       const kgBox = sheet.querySelector('#u-kg');
       const lbBox = sheet.querySelector('#u-lb');
       const progressField = sheet.querySelector('#progress-unit-field');
       const progressToggle = sheet.querySelector('#progress-unit-toggle');
+
+      sheet.querySelector('#row-barras').addEventListener('click', () => openBarsSheet());
 
       async function commit(revertBox) {
         if (!kgBox.checked && !lbBox.checked) {
@@ -117,6 +127,73 @@ function openPesosSheet() {
         await settings.setWeightProgressUnit(btn.dataset.unit);
         progressToggle.querySelectorAll('.seg').forEach((b) => b.classList.toggle('active', b === btn));
       });
+    },
+  });
+}
+
+// Barras configurables — se usan como referencia rápida al elegir barra en
+// ejercicios marcados como "Barra libre" (sentadilla, peso muerto, press
+// banca...). El peso de barra guardado en cada serie es una copia numérica
+// (igual que kg+lb en sets.weightKgPart/weightLbPart), así que editar o
+// borrar una barra aquí nunca reescribe series ya registradas.
+function openBarsSheet() {
+  openSheet(`
+    <h3 class="type-headline" style="margin-bottom:6px;">Barras</h3>
+    <p class="type-caption text-dim" style="margin-bottom:14px;">Se usan en ejercicios marcados como "Barra libre" para calcular el peso total junto a los discos por lado.</p>
+    <div id="bars-list" class="grouped-list" style="margin-bottom:var(--space-4);"></div>
+    <div class="field">
+      <label class="label">Nueva barra</label>
+      <div class="row" style="gap:8px;">
+        <input type="text" id="new-bar-name" placeholder="Nombre" style="flex:2;" />
+        <input type="number" inputmode="decimal" id="new-bar-weight" placeholder="kg" style="flex:1;" />
+      </div>
+    </div>
+    <button class="btn btn-secondary btn-block" id="add-bar-btn">+ Añadir barra</button>
+  `, {
+    onMount: async (sheet) => {
+      async function refresh() {
+        const bars = await repo.listBars();
+        sheet.querySelector('#bars-list').innerHTML = bars.length ? bars.map((b) => `
+          <div class="grouped-row" data-id="${b.id}">
+            <input type="text" class="bar-name-input" value="${escapeHtml(b.name)}" style="flex:1; min-width:0; border:none; background:transparent; font-weight:600; padding:0; font-size:15px;" />
+            <input type="number" inputmode="decimal" class="bar-weight-input" value="${b.weightKg}" style="width:56px; text-align:right; border:none; background:transparent; font-size:15px;" />
+            <span class="type-caption text-faint" style="margin-left:4px;">kg</span>
+            <button type="button" class="icon-btn bar-delete" aria-label="Eliminar" style="margin-left:6px;">✕</button>
+          </div>
+        `).join('') : '<div class="empty-state">No hay barras todavía.</div>';
+
+        sheet.querySelectorAll('#bars-list [data-id]').forEach((row) => {
+          const id = row.dataset.id;
+          row.querySelector('.bar-name-input').addEventListener('blur', async (e) => {
+            const name = e.target.value.trim();
+            if (name) await repo.updateBar(id, { name });
+          });
+          row.querySelector('.bar-weight-input').addEventListener('blur', async (e) => {
+            const weightKg = e.target.value === '' ? 0 : Number(e.target.value);
+            await repo.updateBar(id, { weightKg });
+          });
+          row.querySelector('.bar-delete').addEventListener('click', async () => {
+            const ok = await openConfirmSheet('¿Eliminar esta barra?', { confirmLabel: 'Eliminar' });
+            if (!ok) return;
+            await repo.deleteBar(id);
+            await refresh();
+          });
+        });
+      }
+
+      sheet.querySelector('#add-bar-btn').addEventListener('click', async () => {
+        const nameInput = sheet.querySelector('#new-bar-name');
+        const weightInput = sheet.querySelector('#new-bar-weight');
+        const name = nameInput.value.trim();
+        const weightKg = weightInput.value === '' ? null : Number(weightInput.value);
+        if (!name || weightKg == null) { toast('Indica nombre y peso'); return; }
+        await repo.createBar({ name, weightKg });
+        nameInput.value = '';
+        weightInput.value = '';
+        await refresh();
+      });
+
+      await refresh();
     },
   });
 }

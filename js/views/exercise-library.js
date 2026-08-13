@@ -67,8 +67,11 @@ async function renderList(mount) {
   });
 }
 
-function openExerciseForm(mount, existing) {
+async function openExerciseForm(mount, existing) {
   const isEdit = !!existing;
+  const equipmentType = existing?.equipmentType ?? 'other';
+  const bars = await repo.listBars();
+
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:20px;">${isEdit ? 'Editar ejercicio' : 'Nuevo ejercicio'}</h3>
     <div class="field">
@@ -80,6 +83,23 @@ function openExerciseForm(mount, existing) {
       <input type="text" id="f-muscle" value="${escapeAttr(existing?.muscleGroup || '')}" placeholder="Ej. Pecho" />
     </div>
     <div class="field">
+      <label class="label">Tipo de ejercicio</label>
+      <div class="segmented" id="f-equipment">
+        <button type="button" class="seg ${equipmentType === 'barbell' ? 'active' : ''}" data-equipment="barbell">Barra libre</button>
+        <button type="button" class="seg ${equipmentType !== 'barbell' ? 'active' : ''}" data-equipment="other">Otro</button>
+      </div>
+      <div class="type-caption text-faint" style="margin-top:4px;">
+        "Barra libre" añade el desglose de barra + discos/lado al registrar series (ej. sentadilla, peso muerto, press banca).
+      </div>
+    </div>
+    <div class="field" id="f-bar-field" style="display:${equipmentType === 'barbell' ? '' : 'none'};">
+      <label class="label">Barra por defecto (opcional)</label>
+      <select id="f-bar">
+        <option value="">Sin barra por defecto</option>
+        ${bars.map((b) => `<option value="${b.id}" ${existing?.defaultBarId === b.id ? 'selected' : ''}>${escapeHtml(b.name)} (${b.weightKg} kg)</option>`).join('')}
+      </select>
+    </div>
+    <div class="field" id="f-load-mode-field" style="display:${equipmentType === 'barbell' ? 'none' : ''};">
       <label class="label">Cómo se registra el peso</label>
       <div class="segmented" id="f-load-mode">
         <button type="button" class="seg ${(existing?.loadMode ?? 'total') === 'total' ? 'active' : ''}" data-mode="total">Peso total</button>
@@ -108,11 +128,22 @@ function openExerciseForm(mount, existing) {
         sheet.querySelectorAll('#f-load-mode .seg').forEach((b) => b.classList.toggle('active', b === btn));
       });
 
+      sheet.querySelector('#f-equipment').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-equipment]');
+        if (!btn) return;
+        sheet.querySelectorAll('#f-equipment .seg').forEach((b) => b.classList.toggle('active', b === btn));
+        const isBarbell = btn.dataset.equipment === 'barbell';
+        sheet.querySelector('#f-bar-field').style.display = isBarbell ? '' : 'none';
+        sheet.querySelector('#f-load-mode-field').style.display = isBarbell ? 'none' : '';
+      });
+
       sheet.querySelector('#f-save').addEventListener('click', async () => {
         const name = sheet.querySelector('#f-name').value.trim();
         if (!name) { toast('El nombre es obligatorio'); return; }
         const muscleGroup = sheet.querySelector('#f-muscle').value.trim();
         const notes = sheet.querySelector('#f-notes').value.trim();
+        const newEquipmentType = sheet.querySelector('#f-equipment .seg.active')?.dataset.equipment ?? 'other';
+        const defaultBarId = newEquipmentType === 'barbell' ? (sheet.querySelector('#f-bar').value || null) : null;
         const loadMode = sheet.querySelector('#f-load-mode .seg.active')?.dataset.mode ?? 'total';
         if (isEdit) {
           if (loadMode !== (existing.loadMode ?? 'total')) {
@@ -123,9 +154,9 @@ function openExerciseForm(mount, existing) {
               if (!ok) return;
             }
           }
-          await repo.updateExercise(existing.id, { name, muscleGroup, notes, loadMode });
+          await repo.updateExercise(existing.id, { name, muscleGroup, notes, loadMode, equipmentType: newEquipmentType, defaultBarId });
         } else {
-          await repo.createExercise({ name, muscleGroup, notes, loadMode });
+          await repo.createExercise({ name, muscleGroup, notes, loadMode, equipmentType: newEquipmentType, defaultBarId });
         }
         close();
         await renderList(mount);

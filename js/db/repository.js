@@ -16,13 +16,15 @@ export async function getExercise(id) {
   return db.exercises.get(id);
 }
 
-export async function createExercise({ name, muscleGroup = '', notes = '', loadMode = 'total' }) {
+export async function createExercise({ name, muscleGroup = '', notes = '', loadMode = 'total', equipmentType = 'other', defaultBarId = null }) {
   const exercise = {
     id: newId(),
     name: name.trim(),
     muscleGroup,
     notes,
     loadMode,
+    equipmentType,
+    defaultBarId,
     archived: false,
     createdAt: new Date().toISOString(),
   };
@@ -507,6 +509,33 @@ export async function createSkinfoldSite({ name, instructions = '' }) {
 export async function deleteSkinfoldSite(id) {
   await db.skinfoldEntries.where('siteId').equals(id).delete();
   await db.skinfoldSites.delete(id);
+}
+
+// ---------- Barras ----------
+
+export async function listBars() {
+  return (await db.bars.toArray()).sort((a, b) => a.order - b.order);
+}
+
+export async function getBar(id) {
+  return db.bars.get(id);
+}
+
+export async function createBar({ name, weightKg }) {
+  const existing = await db.bars.toArray();
+  const bar = { id: newId(), name: name.trim(), weightKg, order: existing.length };
+  await db.bars.add(bar);
+  return bar;
+}
+
+export async function updateBar(id, changes) {
+  await db.bars.update(id, changes);
+}
+
+export async function deleteBar(id) {
+  await db.bars.delete(id);
+  const affected = (await db.exercises.toArray()).filter((e) => e.defaultBarId === id);
+  await Promise.all(affected.map((e) => db.exercises.update(e.id, { defaultBarId: null })));
 }
 
 export async function addSkinfoldEntry({ siteId, date, valueMm }) {

@@ -190,7 +190,37 @@ db.version(7).stores({
   });
 });
 
-export const SCHEMA_VERSION = 7;
+// v8: barras configurables (Ajustes > Pesos > Barras). Se usan en ejercicios
+// marcados como equipmentType='barbell' (sentadilla, peso muerto, press
+// banca...) para calcular weight = barra + 2×discos/lado. Tabla nueva; se
+// siembran 3 barras por defecto solo si la tabla queda vacía, para no pisar
+// nada si el usuario ya tuviera datos aquí por algún motivo.
+db.version(8).stores({
+  exercises: 'id, name, muscleGroup, archived',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+}).upgrade(async (tx) => {
+  const count = await tx.table('bars').count();
+  if (count === 0) {
+    await tx.table('bars').bulkAdd([
+      { id: newId(), name: 'Olímpica', weightKg: 20, order: 0 },
+      { id: newId(), name: 'EZ', weightKg: 10, order: 1 },
+      { id: newId(), name: 'Corta', weightKg: 5, order: 2 },
+    ]);
+  }
+});
+
+export const SCHEMA_VERSION = 8;
 
 export function newId() {
   return crypto.randomUUID();
