@@ -92,17 +92,28 @@ function renderExerciseList(mount, template, exercises) {
   });
 }
 
+const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente' };
+
 function targetSummary(te) {
   const parts = [`${te.targetSets} serie${te.targetSets === 1 ? '' : 's'}`];
   const reps = describeRepsTarget(te);
   if (reps) parts.push(reps);
   if (te.targetRir != null) parts.push(`RIR ${te.targetRir}`);
   if (te.targetRestSeconds != null) parts.push(`${te.targetRestSeconds}s descanso`);
+  if (te.defaultSetType && te.defaultSetType !== 'normal') {
+    parts.push(`${SET_TYPE_LABELS[te.defaultSetType]}${te.defaultLastSetOnly ? ' (última serie)' : ''}`);
+  }
   return parts.join(' · ');
 }
 
+// Solo el tipo de serie por defecto + "solo última serie" se configuran aquí —
+// los desgloses de rest-pause/descendente (bloques/escalones concretos) siguen
+// siendo una decisión de la sesión real (workout-session.js), no de la plantilla.
 function openTemplateExerciseForm(mount, template, { te, exercise, isNew }) {
-  openSheet(`
+  let setType = te?.defaultSetType ?? 'normal';
+  let lastSetOnly = te?.defaultLastSetOnly ?? false;
+
+  const close = openSheet(`
     <h3 class="type-headline" style="margin-bottom:20px;">${escapeHtml(exercise.name)}</h3>
     <div class="field">
       <label class="label">Series objetivo</label>
@@ -126,13 +137,38 @@ function openTemplateExerciseForm(mount, template, { te, exercise, isNew }) {
       <input type="number" inputmode="numeric" id="te-rest" value="${te?.targetRestSeconds ?? ''}" />
     </div>
     <div class="field">
+      <label class="label">Tipo de serie por defecto</label>
+      <button type="button" class="set-type-btn ${setType !== 'normal' ? 'set-type-btn--active' : ''}" id="te-type-btn">${SET_TYPE_LABELS[setType]} <span class="set-type-caret">▾</span></button>
+      <div class="type-caption text-faint" style="margin-top:4px;">Cada vez que empieces esta rutina, las series se crearán ya marcadas con esta técnica.</div>
+    </div>
+    <div class="field" id="te-last-set-field" style="display:${setType !== 'normal' ? '' : 'none'};">
+      <label class="checkbox-row">
+        <input type="checkbox" id="te-last-set-only" ${lastSetOnly ? 'checked' : ''} />
+        <span class="type-body">Solo en la última serie</span>
+      </label>
+    </div>
+    <div class="field">
       <label class="label">Notas (opcional)</label>
       <textarea id="te-notes" rows="2">${escapeHtml(te?.notes || '')}</textarea>
     </div>
     <button class="btn btn-primary btn-block" id="te-save">${isNew ? 'Añadir a la rutina' : 'Guardar cambios'}</button>
     ${!isNew ? `<button class="btn btn-ghost-danger btn-block" id="te-remove" style="margin-top:8px;">Quitar de la rutina</button>` : ''}
   `, {
-    onMount: (sheet, close) => {
+    onMount: (sheet) => {
+      const typeBtn = sheet.querySelector('#te-type-btn');
+      const lastSetField = sheet.querySelector('#te-last-set-field');
+      const lastSetCheckbox = sheet.querySelector('#te-last-set-only');
+      typeBtn.addEventListener('click', () => {
+        openTypeChoiceSheet(setType, (newType) => {
+          setType = newType;
+          typeBtn.textContent = '';
+          typeBtn.innerHTML = `${SET_TYPE_LABELS[setType]} <span class="set-type-caret">▾</span>`;
+          typeBtn.classList.toggle('set-type-btn--active', setType !== 'normal');
+          lastSetField.style.display = setType !== 'normal' ? '' : 'none';
+        });
+      });
+      lastSetCheckbox.addEventListener('change', (e) => { lastSetOnly = e.target.checked; });
+
       sheet.querySelector('#te-save').addEventListener('click', async () => {
         const targetSets = Number(sheet.querySelector('#te-sets').value) || 1;
         const repsMinRaw = sheet.querySelector('#te-reps-min').value;
@@ -143,10 +179,15 @@ function openTemplateExerciseForm(mount, template, { te, exercise, isNew }) {
         const targetRir = sheet.querySelector('#te-rir').value === '' ? null : Number(sheet.querySelector('#te-rir').value);
         const targetRestSeconds = sheet.querySelector('#te-rest').value === '' ? null : Number(sheet.querySelector('#te-rest').value);
         const notes = sheet.querySelector('#te-notes').value.trim();
+        const values = {
+          targetSets, targetReps, targetRepsMin, targetRepsMax, targetRir, targetRestSeconds, notes,
+          defaultSetType: setType,
+          defaultLastSetOnly: setType !== 'normal' && lastSetOnly,
+        };
         if (isNew) {
-          await repo.addTemplateExercise(template.id, exercise.id, { targetSets, targetReps, targetRepsMin, targetRepsMax, targetRir, targetRestSeconds, notes });
+          await repo.addTemplateExercise(template.id, exercise.id, values);
         } else {
-          await repo.updateTemplateExercise(te.id, { targetSets, targetReps, targetRepsMin, targetRepsMax, targetRir, targetRestSeconds, notes });
+          await repo.updateTemplateExercise(te.id, values);
         }
         close();
         await renderTemplateDetail(mount, { templateId: template.id });
@@ -157,6 +198,27 @@ function openTemplateExerciseForm(mount, template, { te, exercise, isNew }) {
         if (!ok) return;
         await repo.removeTemplateExercise(te.id);
         await renderTemplateDetail(mount, { templateId: template.id });
+      });
+    },
+  });
+}
+
+function openTypeChoiceSheet(current, onSelect) {
+  const options = ['normal', 'fallo', 'restpause', 'descendente'];
+  openSheet(`
+    <h3 class="type-headline" style="margin-bottom:12px;">Tipo de serie</h3>
+    <div class="grouped-list">
+      ${options.map((key) => `
+        <div class="grouped-row" data-type="${key}" style="cursor:pointer;">
+          <span class="type-body">${SET_TYPE_LABELS[key]}</span>
+          ${key === current ? '<span class="text-faint">✓</span>' : ''}
+        </div>
+      `).join('')}
+    </div>
+  `, {
+    onMount: (sheet, closeInner) => {
+      sheet.querySelectorAll('[data-type]').forEach((row) => {
+        row.addEventListener('click', () => { closeInner(); onSelect(row.dataset.type); });
       });
     },
   });

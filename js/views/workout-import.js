@@ -1,13 +1,13 @@
 // Importar entrenamiento desde foto — la IA solo interpreta la imagen; esta
 // vista es la única responsable de guardar datos, y solo lo hace después de
-// que el usuario revise/corrija y pulse "Crear entrenamiento". El entrenamiento
-// resultante usa exactamente las mismas funciones de repository.js que uno
-// creado a mano (createWorkout/addExerciseToWorkout/addSet) — nada paralelo.
+// que el usuario revise/corrija y pulse "Crear rutina". El resultado es una
+// RUTINA reutilizable (como "DIA 1"), no un entreno ya registrado — usa
+// exactamente las mismas funciones de repository.js que una plantilla creada
+// a mano (createTemplate/addTemplateExercise) — nada paralelo.
 import * as repo from '../db/repository.js';
 import { escapeHtml } from '../core/escape.js';
 import { openSheet, openExercisePickerSheet } from '../core/ui.js';
 import { toast } from '../core/store.js';
-import { todayISO } from '../core/format.js';
 import { navigate } from '../app.js';
 import { analyzeWorkoutPhoto } from '../core/ai-import.js';
 import { matchExerciseName } from '../core/exercise-match.js';
@@ -76,23 +76,19 @@ async function renderReview(mount, result, file) {
     const match = matchExerciseName(e.recognizedName, existing);
     return { tempId: `t${i}`, ...e, matchedExercise: match?.exercise ?? null };
   });
-  const state = { workoutName: result.workoutName, date: todayISO(), items, unrecognized: result.unrecognized };
+  const state = { workoutName: result.workoutName, items, unrecognized: result.unrecognized };
   paintReview(mount, state, file);
 }
 
 function paintReview(mount, state, file) {
   const hasSupersets = state.items.some((it) => it.supersetGroup);
   mount.innerHTML = `
-    <h1 class="type-title" style="margin-bottom:4px;">Importar entrenamiento</h1>
-    <p class="type-caption text-faint" style="margin-bottom:var(--space-4);">Revisa y corrige — nada se guarda todavía.</p>
+    <h1 class="type-title" style="margin-bottom:4px;">Importar rutina</h1>
+    <p class="type-caption text-faint" style="margin-bottom:var(--space-4);">Revisa y corrige — nada se guarda todavía. Se creará como una rutina reutilizable, no como un entreno de hoy.</p>
 
     <div class="field">
-      <label class="label">Nombre</label>
+      <label class="label">Nombre de la rutina</label>
       <input type="text" id="wi-name" value="${escapeHtml(state.workoutName)}" />
-    </div>
-    <div class="field">
-      <label class="label">Fecha</label>
-      <input type="date" id="wi-date" value="${state.date}" />
     </div>
 
     ${hasSupersets ? `<div class="type-caption text-faint" style="margin-bottom:var(--space-3);">Se detectaron superseries (A1/A2…) — de momento se crean como ejercicios independientes; la agrupación real llegará más adelante.</div>` : ''}
@@ -108,11 +104,10 @@ function paintReview(mount, state, file) {
       </div>
     ` : ''}
 
-    <button class="btn btn-primary btn-block" id="wi-create" ${state.items.length ? '' : 'disabled'}>Crear entrenamiento</button>
+    <button class="btn btn-primary btn-block" id="wi-create" ${state.items.length ? '' : 'disabled'}>Crear rutina</button>
   `;
 
   mount.querySelector('#wi-name').addEventListener('blur', (e) => { state.workoutName = e.target.value.trim() || state.workoutName; });
-  mount.querySelector('#wi-date').addEventListener('change', (e) => { state.date = e.target.value || state.date; });
 
   renderList(mount, state, file);
 
@@ -143,7 +138,7 @@ function paintReview(mount, state, file) {
     });
   });
 
-  mount.querySelector('#wi-create').addEventListener('click', () => createWorkoutFromReview(mount, state));
+  mount.querySelector('#wi-create').addEventListener('click', () => createTemplateFromReview(mount, state));
 }
 
 function renderList(mount, state, file) {
@@ -243,32 +238,25 @@ function openTypeChoiceSheet(current, onSelect) {
   });
 }
 
-async function createWorkoutFromReview(mount, state) {
+async function createTemplateFromReview(mount, state) {
   const unresolved = state.items.find((i) => !i.matchedExercise);
   if (unresolved) {
-    toast(`Resuelve el ejercicio "${unresolved.recognizedName}" antes de crear el entrenamiento`);
+    toast(`Resuelve el ejercicio "${unresolved.recognizedName}" antes de crear la rutina`);
     return;
   }
-  const workout = await repo.createWorkout({ name: state.workoutName, date: state.date });
+  const template = await repo.createTemplate({ name: state.workoutName });
   for (const item of state.items) {
-    const we = await repo.addExerciseToWorkout(workout.id, item.matchedExercise.id, {
+    const usesSpecialType = item.setType !== 'normal';
+    await repo.addTemplateExercise(template.id, item.matchedExercise.id, {
+      targetSets: item.sets,
       targetRepsMin: item.repsMin,
       targetRepsMax: item.repsMax,
       targetRir: item.rir,
+      notes: item.notes || '',
+      defaultSetType: usesSpecialType ? item.setType : 'normal',
+      defaultLastSetOnly: usesSpecialType && item.lastSetOnly,
     });
-    for (let i = 0; i < item.sets; i++) {
-      const isLastSet = i === item.sets - 1;
-      const usesSpecialType = item.setType !== 'normal' && (!item.lastSetOnly || isLastSet);
-      await repo.addSet(we.id, {
-        type: usesSpecialType ? item.setType : 'normal',
-        weight: item.weightHintKg ?? null,
-        notes: item.notes || '',
-        restPauseExtra: usesSpecialType && item.setType === 'restpause' && item.extraReps
-          ? item.extraReps.map((reps) => ({ reps })) : null,
-        dropSteps: usesSpecialType && item.setType === 'descendente' && item.steps ? item.steps : null,
-      });
-    }
   }
-  toast('Entrenamiento creado');
-  navigate(`/entreno/sesion/${workout.id}`);
+  toast('Rutina creada');
+  navigate(`/entreno/plantilla/${template.id}`);
 }

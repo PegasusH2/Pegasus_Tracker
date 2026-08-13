@@ -258,6 +258,10 @@ export async function addTemplateExercise(templateId, exerciseId, values = {}) {
     targetRir: values.targetRir ?? null,
     targetRestSeconds: values.targetRestSeconds ?? null,
     notes: values.notes ?? '',
+    defaultSetType: values.defaultSetType ?? 'normal',
+    defaultLastSetOnly: values.defaultLastSetOnly ?? false,
+    defaultRestPauseExtra: values.defaultRestPauseExtra ?? null,
+    defaultDropSteps: values.defaultDropSteps ?? null,
   };
   await db.templateExercises.add(te);
   return te;
@@ -312,10 +316,16 @@ export async function startWorkoutFromTemplate(templateId, { date }) {
     const lastSets = lastEntry?.sets ?? [];
     const setCount = Math.max(1, te.targetSets || 1);
     const prefillReps = te.targetRepsMax ?? te.targetRepsMin ?? te.targetReps ?? null;
+    const defaultSetType = te.defaultSetType ?? 'normal';
     for (let i = 0; i < setCount; i++) {
+      const isLastSet = i === setCount - 1;
+      const usesSpecialType = defaultSetType !== 'normal' && (!te.defaultLastSetOnly || isLastSet);
       await addSet(we.id, {
         weight: lastSets[i]?.weight ?? null,
         reps: lastSets[i]?.reps ?? prefillReps,
+        type: usesSpecialType ? defaultSetType : 'normal',
+        restPauseExtra: usesSpecialType && defaultSetType === 'restpause' ? te.defaultRestPauseExtra : null,
+        dropSteps: usesSpecialType && defaultSetType === 'descendente' ? te.defaultDropSteps : null,
       });
     }
   }

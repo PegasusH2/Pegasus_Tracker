@@ -162,7 +162,35 @@ db.version(6).stores({
   });
 });
 
-export const SCHEMA_VERSION = 6;
+// v7: tipo de serie POR DEFECTO a nivel de plantilla — permite que una rutina
+// recuerde "Fondos → FALLO" (o rest-pause/descendente con sus bloques) para
+// que, cada vez que se empiece esa rutina, las series se creen ya marcadas
+// con esa técnica (igual que sets.type, pero como "plan" en vez de dato
+// realizado). default 'normal'/null en todo lo existente = comportamiento
+// actual intacto.
+db.version(7).stores({
+  exercises: 'id, name, muscleGroup, archived',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+}).upgrade(async (tx) => {
+  await tx.table('templateExercises').toCollection().modify((te) => {
+    if (te.defaultSetType === undefined) te.defaultSetType = 'normal';
+    if (te.defaultLastSetOnly === undefined) te.defaultLastSetOnly = false;
+    if (te.defaultRestPauseExtra === undefined) te.defaultRestPauseExtra = null;
+    if (te.defaultDropSteps === undefined) te.defaultDropSteps = null;
+  });
+});
+
+export const SCHEMA_VERSION = 7;
 
 export function newId() {
   return crypto.randomUUID();
