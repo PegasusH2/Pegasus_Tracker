@@ -1,4 +1,5 @@
 // Estadísticas, PRs y tendencias derivadas del historial. Todo local, sin IA.
+import { effectiveSetVolume } from './progression.js';
 
 export function estimate1RM(weight, reps) {
   if (weight == null || reps == null) return null;
@@ -9,7 +10,6 @@ export function estimate1RM(weight, reps) {
 // loadMode 'perSide' duplica el peso al calcular volumen (mancuerna/lado) —
 // bestWeight/bestReps/best1RM siguen basados en el peso crudo por serie.
 export function bestRecordsFromHistory(history, { loadMode = 'total' } = {}) {
-  const mult = loadMode === 'perSide' ? 2 : 1;
   let bestWeight = null, bestWeightEntry = null;
   let bestVolumeSession = null;
   let best1RM = null, best1RMEntry = null;
@@ -19,7 +19,7 @@ export function bestRecordsFromHistory(history, { loadMode = 'total' } = {}) {
     let sessionVol = 0;
     for (const s of entry.sets) {
       if (s.weight == null || s.reps == null) continue;
-      sessionVol += s.weight * mult * s.reps;
+      sessionVol += effectiveSetVolume(s, { loadMode });
 
       if (bestWeight == null || s.weight > bestWeight) {
         bestWeight = s.weight;
@@ -71,13 +71,12 @@ export function filterByPeriodGeneric(items, periodKey, getDate = (i) => i.date)
 
 // metric: 'totalVolume' | 'topWeight' | 'topReps' | 'avgRir'
 export function trendSeries(history, metric, { loadMode = 'total' } = {}) {
-  const mult = loadMode === 'perSide' ? 2 : 1;
   const sorted = [...history].sort((a, b) => (a.workout.date < b.workout.date ? -1 : 1));
   return sorted.map((entry) => {
     const validSets = entry.sets.filter((s) => s.weight != null && s.reps != null);
     let value = null;
     if (metric === 'totalVolume') {
-      value = validSets.reduce((sum, s) => sum + s.weight * mult * s.reps, 0);
+      value = validSets.reduce((sum, s) => sum + effectiveSetVolume(s, { loadMode }), 0);
     } else if (metric === 'topWeight') {
       value = validSets.length ? Math.max(...validSets.map((s) => s.weight)) : null;
     } else if (metric === 'topReps') {

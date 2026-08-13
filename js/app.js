@@ -2,6 +2,7 @@ import { renderHome } from './views/home.js';
 import { renderExerciseLibrary } from './views/exercise-library.js';
 import { renderExerciseDetail } from './views/exercise-detail.js';
 import { renderWorkoutNew } from './views/workout-new.js';
+import { renderWorkoutImport } from './views/workout-import.js';
 import { renderWorkoutSession } from './views/workout-session.js';
 import { renderWorkoutHistory } from './views/workout-history.js';
 import { renderTemplateDetail } from './views/templates.js';
@@ -59,6 +60,7 @@ function matchRoute(segments) {
     if (!sub) return { view: renderWorkoutHistory, tab: 'entreno', subtab: 'entrenamientos' };
     if (sub === 'ejercicios') return { view: renderExerciseLibrary, tab: 'entreno', subtab: 'ejercicios' };
     if (sub === 'nuevo') return { view: renderWorkoutNew, tab: 'entreno', subtab: 'entrenamientos', params: { presetDate: param || null } };
+    if (sub === 'importar-foto') return { view: renderWorkoutImport, tab: 'entreno', subtab: 'entrenamientos' };
     if (sub === 'sesion' && param) return { view: renderWorkoutSession, tab: 'entreno', subtab: null, focusMode: true, params: { workoutId: param } };
     if (sub === 'plantilla' && param) return { view: renderTemplateDetail, tab: 'entreno', subtab: 'entrenamientos', params: { templateId: param } };
     if (sub === 'ejercicio' && param) return { view: renderExerciseDetail, tab: 'entreno', subtab: 'ejercicios', params: { exerciseId: param } };

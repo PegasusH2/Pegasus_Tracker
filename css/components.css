@@ -144,6 +144,84 @@
   padding: 4px 0;
 }
 
+/* Tipo de serie — opción secundaria discreta, nunca botones grandes
+   permanentes (Normal/Fallo/Rest-pause/Descendente se elige en un sheet). */
+.set-type-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+}
+.set-type-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.set-type-btn--active { color: var(--accent); }
+.set-type-caret { font-size: 9px; opacity: 0.7; }
+.set-range-done { font-size: 11px; font-weight: 600; color: var(--accent); }
+
+/* Bloques extra de rest-pause/descendente — bajo la fila principal de la serie. */
+.set-extra-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 0 10px;
+  flex-wrap: wrap;
+}
+.set-extra-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+.set-extra-chips, .set-extra-steps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.set-extra-chip-input {
+  width: 40px;
+  text-align: center;
+  background: var(--surface-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.set-step {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+}
+.set-step-weight, .set-step-reps {
+  width: 40px;
+  text-align: center;
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.set-step-x { color: var(--text-tertiary); font-size: 12px; }
+.set-step-remove { color: var(--text-tertiary); font-size: 12px; padding: 0 2px; }
+.set-extra-add {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 3px 8px;
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+}
+
 /* Tarjeta de ejercicio dentro de un entrenamiento */
 .exercise-card { padding: var(--space-4); margin-bottom: var(--space-3); }
 .exercise-card-header {

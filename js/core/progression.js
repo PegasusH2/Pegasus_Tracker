@@ -11,12 +11,62 @@ import { formatWeightUnit } from './units.js';
 // Y se avisa (sin penalizar) cuando:
 //   - mismo peso + mismas reps + RIR menor (mismo trabajo, más esfuerzo)
 
+// Volumen de UNA serie, consciente de su tipo — único lugar donde se decide
+// cómo contar fallo/rest-pause/descendente, para que sessionVolume/trendSeries/
+// bestRecordsFromHistory nunca dupliquen ni diverjan entre sí.
 // loadMode 'perSide' duplica el peso registrado (mancuerna/lado) al calcular
 // la carga total — el peso guardado en cada serie nunca cambia, solo se
 // reinterpreta al leer, según el ejercicio al que pertenece.
-export function sessionVolume(sets, { loadMode = 'total' } = {}) {
+export function effectiveSetVolume(set, { loadMode = 'total' } = {}) {
   const mult = loadMode === 'perSide' ? 2 : 1;
-  return sets.reduce((sum, s) => sum + (Number(s.weight) || 0) * mult * (Number(s.reps) || 0), 0);
+  const type = set.type ?? 'normal';
+  const mainVol = (Number(set.weight) || 0) * mult * (Number(set.reps) || 0);
+
+  // Descendente: weight/reps de nivel superior son el primer escalón; cada
+  // escalón adicional en dropSteps tiene su propio peso (va bajando) y se suma.
+  if (type === 'descendente' && Array.isArray(set.dropSteps) && set.dropSteps.length) {
+    const extraVol = set.dropSteps.reduce((sum, step) => sum + (Number(step.weight) || 0) * mult * (Number(step.reps) || 0), 0);
+    return mainVol + extraVol;
+  }
+
+  // Rest-pause: mismos kg en todos los bloques, las reps de los bloques extra se suman.
+  if (type === 'restpause' && Array.isArray(set.restPauseExtra) && set.restPauseExtra.length) {
+    const extraReps = set.restPauseExtra.reduce((sum, block) => sum + (Number(block.reps) || 0), 0);
+    return (Number(set.weight) || 0) * mult * extraReps + mainVol;
+  }
+
+  return mainVol;
+}
+
+export function sessionVolume(sets, { loadMode = 'total' } = {}) {
+  return sets.reduce((sum, s) => sum + effectiveSetVolume(s, { loadMode }), 0);
+}
+
+// "8–10 reps" para un rango, o "8 reps" si min===max (incluye el caso de
+// objetivos antiguos migrados, que siempre tienen min===max===targetReps).
+export function describeRepsTarget(we) {
+  if (!we) return '';
+  const { targetRepsMin, targetRepsMax } = we;
+  if (targetRepsMin == null && targetRepsMax == null) return '';
+  if (targetRepsMin == null || targetRepsMax == null || targetRepsMin === targetRepsMax) {
+    return `${targetRepsMax ?? targetRepsMin} reps`;
+  }
+  return `${targetRepsMin}–${targetRepsMax} reps`;
+}
+
+// true cuando una serie NORMAL alcanza el techo del rango objetivo con, como
+// mucho, el RIR objetivo — nunca cambia el peso, solo informa (ver sección 4
+// del pedido: "puede indicar... y sugerir", jamás ajustar automáticamente).
+export function checkRangeCompletion(set, we) {
+  if (!we || !set) return false;
+  if ((set.type ?? 'normal') !== 'normal') return false;
+  // La serie debe estar realmente registrada (peso + reps), no solo prellenada
+  // con el objetivo al copiar la plantilla — si no, cualquier serie vacía
+  // "completaría el rango" con las reps de plantilla sin haberse hecho.
+  if (set.weight == null || set.reps == null || we.targetRepsMax == null) return false;
+  if (set.reps < we.targetRepsMax) return false;
+  if (we.targetRir != null && set.rir != null && set.rir > we.targetRir) return false;
+  return true;
 }
 
 function sign(n) {

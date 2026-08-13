@@ -4,6 +4,7 @@ import { escapeHtml } from '../core/escape.js';
 import { openSheet, openConfirmSheet, openExercisePickerSheet, TEMPLATE_ICONS, templateIconHtml } from '../core/ui.js';
 import { toast } from '../core/store.js';
 import { navigate } from '../app.js';
+import { describeRepsTarget } from '../core/progression.js';
 
 export async function renderTemplateDetail(mount, { templateId }) {
   const template = await repo.getTemplate(templateId);
@@ -93,7 +94,8 @@ function renderExerciseList(mount, template, exercises) {
 
 function targetSummary(te) {
   const parts = [`${te.targetSets} serie${te.targetSets === 1 ? '' : 's'}`];
-  if (te.targetReps != null) parts.push(`${te.targetReps} reps`);
+  const reps = describeRepsTarget(te);
+  if (reps) parts.push(reps);
   if (te.targetRir != null) parts.push(`RIR ${te.targetRir}`);
   if (te.targetRestSeconds != null) parts.push(`${te.targetRestSeconds}s descanso`);
   return parts.join(' · ');
@@ -108,7 +110,12 @@ function openTemplateExerciseForm(mount, template, { te, exercise, isNew }) {
     </div>
     <div class="field">
       <label class="label">Repeticiones objetivo (opcional)</label>
-      <input type="number" inputmode="numeric" id="te-reps" value="${te?.targetReps ?? ''}" />
+      <div class="row" style="gap:8px; align-items:center;">
+        <input type="number" inputmode="numeric" id="te-reps-min" placeholder="Mín" value="${te?.targetRepsMin ?? ''}" style="flex:1;" />
+        <span class="type-body text-faint">–</span>
+        <input type="number" inputmode="numeric" id="te-reps-max" placeholder="Máx (opcional)" value="${te?.targetRepsMax ?? ''}" style="flex:1;" />
+      </div>
+      <div class="type-caption text-faint" style="margin-top:4px;">Deja "Máx" en blanco para una cantidad exacta (ej. solo "8" = 8 reps).</div>
     </div>
     <div class="field">
       <label class="label">RIR objetivo (opcional)</label>
@@ -128,14 +135,18 @@ function openTemplateExerciseForm(mount, template, { te, exercise, isNew }) {
     onMount: (sheet, close) => {
       sheet.querySelector('#te-save').addEventListener('click', async () => {
         const targetSets = Number(sheet.querySelector('#te-sets').value) || 1;
-        const targetReps = sheet.querySelector('#te-reps').value === '' ? null : Number(sheet.querySelector('#te-reps').value);
+        const repsMinRaw = sheet.querySelector('#te-reps-min').value;
+        const repsMaxRaw = sheet.querySelector('#te-reps-max').value;
+        const targetRepsMin = repsMinRaw === '' ? null : Number(repsMinRaw);
+        const targetRepsMax = repsMaxRaw === '' ? targetRepsMin : Number(repsMaxRaw);
+        const targetReps = targetRepsMax ?? targetRepsMin;
         const targetRir = sheet.querySelector('#te-rir').value === '' ? null : Number(sheet.querySelector('#te-rir').value);
         const targetRestSeconds = sheet.querySelector('#te-rest').value === '' ? null : Number(sheet.querySelector('#te-rest').value);
         const notes = sheet.querySelector('#te-notes').value.trim();
         if (isNew) {
-          await repo.addTemplateExercise(template.id, exercise.id, { targetSets, targetReps, targetRir, targetRestSeconds, notes });
+          await repo.addTemplateExercise(template.id, exercise.id, { targetSets, targetReps, targetRepsMin, targetRepsMax, targetRir, targetRestSeconds, notes });
         } else {
-          await repo.updateTemplateExercise(te.id, { targetSets, targetReps, targetRir, targetRestSeconds, notes });
+          await repo.updateTemplateExercise(te.id, { targetSets, targetReps, targetRepsMin, targetRepsMax, targetRir, targetRestSeconds, notes });
         }
         close();
         await renderTemplateDetail(mount, { templateId: template.id });

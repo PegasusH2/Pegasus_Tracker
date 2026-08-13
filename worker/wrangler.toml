@@ -1,0 +1,10 @@
+name = "fitness-tracker-import"
+main = "index.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+GEMINI_MODEL = "gemini-flash-latest"
+
+# Secretos (NUNCA van aquí, se configuran con `wrangler secret put`):
+#   GEMINI_API_KEY    - tu API key de Google AI Studio
+#   APP_SHARED_TOKEN  - una cadena cualquiera que también pondrás en la PWA

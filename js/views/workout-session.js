@@ -1,5 +1,5 @@
 import * as repo from '../db/repository.js';
-import { compareSessions } from '../core/progression.js';
+import { compareSessions, describeRepsTarget, checkRangeCompletion } from '../core/progression.js';
 import { trendSeries } from '../core/stats.js';
 import { formatDate, relativeDays } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
@@ -158,7 +158,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
           <div class="last-session-set">
             <span class="set-idx num">${s.setNumber}</span>
             <span class="num">${weightSummary(s, defaultUnit)} × ${s.reps ?? '—'}</span>
-            <span class="text-faint">${s.rir != null ? `RIR ${s.rir}` : ''}</span>
+            <span class="text-faint">${[s.rir != null ? `RIR ${s.rir}` : '', s.type && s.type !== 'normal' ? setTypeLabel(s.type).toUpperCase() : ''].filter(Boolean).join(' · ')}</span>
           </div>
         `).join('') || '<span class="last-session-empty">Sin series registradas</span>'}
       </div>
@@ -176,8 +176,14 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
   setsList.innerHTML = currentSets.map((s) => {
     const done = s.weight != null && s.reps != null;
     const soloVal = s.weight != null ? roundForDisplay(toUnit(s.weight, soloUnit), 1) : '';
+    const type = s.type ?? 'normal';
+    const rangeDone = checkRangeCompletion(s, workoutExercise);
     return `
     <div class="set-group">
+    <div class="set-type-row">
+      <button type="button" class="set-type-btn ${type !== 'normal' ? 'set-type-btn--active' : ''}" data-set-id="${s.id}">${setTypeLabel(type)} <span class="set-type-caret">▾</span></button>
+      ${rangeDone ? '<span class="set-range-done">✓ Rango completado</span>' : ''}
+    </div>
     <div class="set-row ${dualUnit ? 'set-row--dual-unit' : ''}" data-set-id="${s.id}">
       <span class="set-idx">${s.setNumber}</span>
       ${dualUnit ? `
@@ -213,9 +219,79 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
         Total <button type="button" class="set-total-toggle" data-weight-kg="${s.weight}" data-unit="${defaultUnit}">${formatTotal(s.weight, defaultUnit)}</button>
       </div>
     ` : ''}
+    ${renderSetExtraBlock(s)}
     </div>
   `;
   }).join('');
+
+  setsList.querySelectorAll('.set-type-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const setId = btn.dataset.setId;
+      const current = currentSets.find((s) => s.id === setId);
+      openSetTypeSheet(current?.type, async (newType) => {
+        const changes = { type: newType };
+        changes.restPauseExtra = newType === 'restpause' ? [] : null;
+        changes.dropSteps = newType === 'descendente' ? [] : null;
+        await repo.updateSet(setId, changes);
+        await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+      });
+    });
+  });
+
+  setsList.querySelectorAll('.set-extra-chip-input').forEach((input) => {
+    input.addEventListener('blur', async (e) => {
+      const row = e.target.closest('.set-extra-row');
+      const setId = row.dataset.setId;
+      const current = currentSets.find((s) => s.id === setId);
+      const blocks = [...(current.restPauseExtra ?? [])];
+      const idx = Number(e.target.dataset.idx);
+      const value = e.target.value === '' ? null : Number(e.target.value);
+      blocks[idx] = { reps: value };
+      await repo.updateSet(setId, { restPauseExtra: blocks });
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+    });
+  });
+
+  setsList.querySelectorAll('.set-step-weight, .set-step-reps').forEach((input) => {
+    input.addEventListener('blur', async (e) => {
+      const row = e.target.closest('.set-extra-row');
+      const setId = row.dataset.setId;
+      const current = currentSets.find((s) => s.id === setId);
+      const steps = (current.dropSteps ?? []).map((s) => ({ ...s }));
+      const idx = Number(e.target.dataset.idx);
+      const field = e.target.classList.contains('set-step-weight') ? 'weight' : 'reps';
+      steps[idx] = { ...steps[idx], [field]: e.target.value === '' ? null : Number(e.target.value) };
+      await repo.updateSet(setId, { dropSteps: steps });
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+    });
+  });
+
+  setsList.querySelectorAll('.set-step-remove').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const row = e.target.closest('.set-extra-row');
+      const setId = row.dataset.setId;
+      const current = currentSets.find((s) => s.id === setId);
+      const steps = (current.dropSteps ?? []).filter((_, i) => i !== Number(btn.dataset.idx));
+      await repo.updateSet(setId, { dropSteps: steps });
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+    });
+  });
+
+  setsList.querySelectorAll('.set-extra-add').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const row = e.target.closest('.set-extra-row');
+      const setId = row.dataset.setId;
+      const current = currentSets.find((s) => s.id === setId);
+      if (btn.dataset.kind === 'restpause') {
+        const blocks = [...(current.restPauseExtra ?? []), { reps: null }];
+        await repo.updateSet(setId, { restPauseExtra: blocks });
+      } else {
+        const steps = [...(current.dropSteps ?? []).map((s) => ({ ...s })), { weight: null, reps: null }];
+        await repo.updateSet(setId, { dropSteps: steps });
+      }
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+    });
+  });
 
   setsList.querySelectorAll('.set-total-toggle').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -329,11 +405,79 @@ function weightSummary(s, defaultUnit) {
 function targetCaption(we) {
   if (!we) return '';
   const parts = [];
-  if (we.targetReps != null) parts.push(`${we.targetReps} reps`);
+  const reps = describeRepsTarget(we);
+  if (reps) parts.push(reps);
   if (we.targetRir != null) parts.push(`RIR ${we.targetRir}`);
   if (we.targetRestSeconds != null) parts.push(`${we.targetRestSeconds}s descanso`);
   if (!parts.length) return '';
   return `<div class="type-caption text-faint" style="margin-bottom:10px;">Objetivo: ${parts.join(' · ')}</div>`;
+}
+
+const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente' };
+function setTypeLabel(type) {
+  return SET_TYPE_LABELS[type] ?? 'Normal';
+}
+
+// Sheet compacto para elegir el tipo de serie — se abre solo al pedirlo (sección
+// 18 del pedido: "no mostrar cuatro botones grandes permanentemente").
+function openSetTypeSheet(currentType, onSelect) {
+  const options = ['normal', 'fallo', 'restpause', 'descendente'];
+  openSheet(`
+    <h3 class="type-headline" style="margin-bottom:12px;">Tipo de serie</h3>
+    <div class="grouped-list">
+      ${options.map((key) => `
+        <div class="grouped-row" data-type="${key}" style="cursor:pointer;">
+          <span class="type-body">${setTypeLabel(key)}</span>
+          ${key === (currentType ?? 'normal') ? '<span class="text-faint">✓</span>' : ''}
+        </div>
+      `).join('')}
+    </div>
+  `, {
+    onMount: (sheet, close) => {
+      sheet.querySelectorAll('[data-type]').forEach((row) => {
+        row.addEventListener('click', () => {
+          close();
+          onSelect(row.dataset.type);
+        });
+      });
+    },
+  });
+}
+
+// Bloques extra de una técnica especial, más allá del bloque principal
+// (weight/reps de la propia serie): rest-pause suma reps con el mismo peso;
+// descendente añade escalones con su propio peso.
+function renderSetExtraBlock(s) {
+  if (s.type === 'restpause') {
+    const blocks = s.restPauseExtra ?? [];
+    return `
+      <div class="set-extra-row" data-set-id="${s.id}" data-kind="restpause">
+        <span class="set-extra-label">+ reps</span>
+        <div class="set-extra-chips">
+          ${blocks.map((b, i) => `<input type="number" inputmode="numeric" class="set-extra-chip-input" data-idx="${i}" value="${b.reps ?? ''}" placeholder="0" />`).join('')}
+          <button type="button" class="set-extra-add" data-kind="restpause">+</button>
+        </div>
+      </div>`;
+  }
+  if (s.type === 'descendente') {
+    const steps = s.dropSteps ?? [];
+    return `
+      <div class="set-extra-row set-extra-row--steps" data-set-id="${s.id}" data-kind="descendente">
+        <span class="set-extra-label">↓ escalones</span>
+        <div class="set-extra-steps">
+          ${steps.map((step, i) => `
+            <span class="set-step" data-idx="${i}">
+              <input type="number" inputmode="decimal" class="set-step-weight" data-idx="${i}" value="${step.weight ?? ''}" placeholder="kg" />
+              <span class="set-step-x">×</span>
+              <input type="number" inputmode="numeric" class="set-step-reps" data-idx="${i}" value="${step.reps ?? ''}" placeholder="reps" />
+              <button type="button" class="set-step-remove" data-idx="${i}">✕</button>
+            </span>
+          `).join('')}
+          <button type="button" class="set-extra-add" data-kind="descendente">+ escalón</button>
+        </div>
+      </div>`;
+  }
+  return '';
 }
 
 function renderSparkline(canvas, values) {

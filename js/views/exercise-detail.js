@@ -138,6 +138,24 @@ function renderComparison(mount, history, unit, loadMode) {
   `;
 }
 
+// Cada tipo de serie se distingue claramente en el historial — nunca se
+// mezclan las reps de una técnica especial con las de una serie normal.
+function formatSetLine(s, unit) {
+  const w = s.weight != null ? roundForDisplay(toUnit(s.weight, unit), 1) : '—';
+  const type = s.type ?? 'normal';
+  if (type === 'descendente' && Array.isArray(s.dropSteps) && s.dropSteps.length) {
+    const steps = s.dropSteps.map((step) => `${roundForDisplay(toUnit(step.weight, unit), 1)}×${step.reps ?? '—'}`).join(' ↓ ');
+    return `${w}×${s.reps ?? '—'} ↓ ${steps} · DESCENDENTE`;
+  }
+  if (type === 'restpause' && Array.isArray(s.restPauseExtra) && s.restPauseExtra.length) {
+    const extra = s.restPauseExtra.map((b) => `+${b.reps ?? 0}`).join(' ');
+    return `${w}×${s.reps ?? '—'} ${extra} · REST-PAUSE`;
+  }
+  const rirPart = s.rir != null ? ` (RIR ${s.rir})` : '';
+  const failPart = type === 'fallo' ? ' · FALLO' : '';
+  return `${w}×${s.reps ?? '—'}${rirPart}${failPart}`;
+}
+
 function renderHistoryList(mount, history, unit) {
   const list = mount.querySelector('#history-list');
   list.innerHTML = `<div class="grouped-list">${history.map((entry) => `
@@ -145,7 +163,7 @@ function renderHistoryList(mount, history, unit) {
       <div>
         <div class="type-body" style="font-weight:600;">${formatDate(entry.workout.date)}</div>
         <div class="type-caption text-faint">
-          ${entry.sets.filter((s) => s.weight != null).map((s) => `${roundForDisplay(toUnit(s.weight, unit), 1)}×${s.reps}${s.rir != null ? ` (RIR ${s.rir})` : ''}`).join(' · ') || 'Sin datos'}
+          ${entry.sets.filter((s) => s.weight != null).map((s) => formatSetLine(s, unit)).join(' · ') || 'Sin datos'}
         </div>
       </div>
       <span class="text-faint">›</span>

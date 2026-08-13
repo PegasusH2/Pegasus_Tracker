@@ -113,19 +113,23 @@ export async function countSetsInRange(fromISO, toISO) {
 
 // ---------- Ejercicios dentro de un entrenamiento ----------
 
-// targets (opcional): { targetReps, targetRir, targetRestSeconds } — copia
-// congelada del objetivo de la plantilla en el momento de crear la sesión.
-// Editar la plantilla después no cambia estos valores ya copiados.
+// targets (opcional): { targetRepsMin, targetRepsMax, targetRir, targetRestSeconds }
+// — copia congelada del objetivo de la plantilla en el momento de crear la
+// sesión. Editar la plantilla después no cambia estos valores ya copiados.
 export async function addExerciseToWorkout(workoutId, exerciseId, targets = {}) {
   const existing = await db.workoutExercises.where('workoutId').equals(workoutId).toArray();
   const order = existing.length;
+  const repsMin = targets.targetRepsMin ?? targets.targetReps ?? null;
+  const repsMax = targets.targetRepsMax ?? targets.targetReps ?? null;
   const we = {
     id: newId(),
     workoutId,
     exerciseId,
     order,
     notes: '',
-    targetReps: targets.targetReps ?? null,
+    targetReps: repsMax ?? repsMin ?? null,
+    targetRepsMin: repsMin,
+    targetRepsMax: repsMax,
     targetRir: targets.targetRir ?? null,
     targetRestSeconds: targets.targetRestSeconds ?? null,
   };
@@ -234,15 +238,23 @@ export async function getTemplateSummary(templateId) {
   };
 }
 
+// targetRepsMin/targetRepsMax definen el rango objetivo ("8-10 reps"); para una
+// cantidad exacta, min===max (ej. "8 reps" -> targetRepsMin=8, targetRepsMax=8).
+// targetReps (legado, un solo número) se mantiene en espejo por si algún código
+// antiguo lo lee todavía, pero ya no es la fuente de verdad.
 export async function addTemplateExercise(templateId, exerciseId, values = {}) {
   const existing = await db.templateExercises.where('templateId').equals(templateId).toArray();
+  const repsMin = values.targetRepsMin ?? values.targetReps ?? null;
+  const repsMax = values.targetRepsMax ?? values.targetReps ?? null;
   const te = {
     id: newId(),
     templateId,
     exerciseId,
     order: existing.length,
     targetSets: values.targetSets ?? 3,
-    targetReps: values.targetReps ?? null,
+    targetReps: repsMax ?? repsMin ?? null,
+    targetRepsMin: repsMin,
+    targetRepsMax: repsMax,
     targetRir: values.targetRir ?? null,
     targetRestSeconds: values.targetRestSeconds ?? null,
     notes: values.notes ?? '',
@@ -291,17 +303,19 @@ export async function startWorkoutFromTemplate(templateId, { date }) {
 
   for (const te of templateExercises) {
     const we = await addExerciseToWorkout(workout.id, te.exerciseId, {
-      targetReps: te.targetReps,
+      targetRepsMin: te.targetRepsMin ?? te.targetReps,
+      targetRepsMax: te.targetRepsMax ?? te.targetReps,
       targetRir: te.targetRir,
       targetRestSeconds: te.targetRestSeconds,
     });
     const lastEntry = await getLastSessionForExercise(te.exerciseId);
     const lastSets = lastEntry?.sets ?? [];
     const setCount = Math.max(1, te.targetSets || 1);
+    const prefillReps = te.targetRepsMax ?? te.targetRepsMin ?? te.targetReps ?? null;
     for (let i = 0; i < setCount; i++) {
       await addSet(we.id, {
         weight: lastSets[i]?.weight ?? null,
-        reps: lastSets[i]?.reps ?? te.targetReps ?? null,
+        reps: lastSets[i]?.reps ?? prefillReps,
       });
     }
   }
@@ -329,6 +343,17 @@ export async function addSet(workoutExerciseId, values = {}) {
     rpe: values.rpe ?? null,
     restSeconds: values.restSeconds ?? null,
     notes: values.notes ?? '',
+    // Tipo de serie ('normal'|'fallo'|'restpause'|'descendente') y estructura de
+    // técnicas especiales — ver core/progression.js:effectiveSetVolume para cómo
+    // se interpretan al calcular volumen.
+    type: values.type ?? 'normal',
+    restPauseExtra: values.restPauseExtra ?? null,
+    dropSteps: values.dropSteps ?? null,
+    // Desglose de equipamiento (barra+discos / lastre) — aún sin UI, reservado
+    // para la fase de equipamiento; weight sigue siendo siempre el total en kg.
+    barWeightKg: values.barWeightKg ?? null,
+    plateWeightPerSideKg: values.plateWeightPerSideKg ?? null,
+    addedWeightKg: values.addedWeightKg ?? null,
   };
   await db.sets.add(set);
   return set;

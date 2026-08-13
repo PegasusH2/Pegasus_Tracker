@@ -106,10 +106,10 @@ export function renderInsightCallout(insight) {
 // Sheet reutilizable para buscar un ejercicio existente o crear uno nuevo.
 // onSelect(exercise) se llama con el ejercicio elegido (existente o recién creado);
 // el llamador decide qué hacer con él (añadirlo a una sesión, a una plantilla...).
-export function openExercisePickerSheet({ onSelect, title = 'Añadir ejercicio' } = {}) {
+export function openExercisePickerSheet({ onSelect, title = 'Añadir ejercicio', initialSearch = '' } = {}) {
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:16px;">${title}</h3>
-    <input type="search" id="ex-search" placeholder="Buscar ejercicio..." style="margin-bottom:12px;" />
+    <input type="search" id="ex-search" placeholder="Buscar ejercicio..." value="${escapeHtml(initialSearch)}" style="margin-bottom:12px;" />
     <div id="ex-results" class="list"></div>
     <button class="btn btn-secondary btn-block" id="ex-create-new" style="margin-top:12px;">+ Crear ejercicio nuevo</button>
   `, {
@@ -163,7 +163,7 @@ export function openExercisePickerSheet({ onSelect, title = 'Añadir ejercicio' 
           },
         });
       });
-      await renderResults('');
+      await renderResults(initialSearch);
     },
   });
 }

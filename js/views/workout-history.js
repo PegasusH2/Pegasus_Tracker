@@ -23,13 +23,15 @@ export async function renderWorkoutHistory(mount) {
       </button>
     </div>
 
-    <button class="btn btn-secondary btn-block" id="new-workout" style="margin-bottom:var(--space-5);">+ Entrenamiento libre</button>
+    <button class="btn btn-secondary btn-block" id="new-workout" style="margin-bottom:var(--space-3);">+ Entrenamiento libre</button>
+    <button class="btn btn-secondary btn-block" id="import-photo" style="margin-bottom:var(--space-5);">📷 Importar desde foto</button>
 
     <div class="section-label">Tus entrenos</div>
     <div id="w-calendar"></div>
   `;
 
   mount.querySelector('#new-workout').addEventListener('click', () => navigate('/entreno/nuevo'));
+  mount.querySelector('#import-photo').addEventListener('click', () => navigate('/entreno/importar-foto'));
   mount.querySelector('#add-template').addEventListener('click', () => openNewTemplateSheet());
   mount.querySelectorAll('.template-tile[data-id]').forEach((tile) => {
     tile.addEventListener('click', () => navigate(`/entreno/plantilla/${tile.dataset.id}`));

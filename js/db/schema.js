@@ -115,7 +115,54 @@ db.version(5).stores({
   });
 });
 
-export const SCHEMA_VERSION = 5;
+// v6: rangos de reps objetivo + tipos de serie especiales (fallo, rest-pause,
+// descendente). targetReps (un solo número) se conserva sin tocar; se deriva
+// targetRepsMin = targetRepsMax = targetReps para que un objetivo antiguo
+// "10 reps" siga siendo exactamente eso, ahora expresado como rango 10-10.
+// sets.type='normal' en todo lo existente preserva el comportamiento actual
+// byte a byte — el resto de campos nuevos son desgloses opcionales, nunca
+// sustituyen weight/reps.
+db.version(6).stores({
+  exercises: 'id, name, muscleGroup, archived',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+}).upgrade(async (tx) => {
+  await tx.table('sets').toCollection().modify((s) => {
+    if (s.type === undefined) s.type = 'normal';
+    if (s.restPauseExtra === undefined) s.restPauseExtra = null;
+    if (s.dropSteps === undefined) s.dropSteps = null;
+    if (s.barWeightKg === undefined) s.barWeightKg = null;
+    if (s.plateWeightPerSideKg === undefined) s.plateWeightPerSideKg = null;
+    if (s.addedWeightKg === undefined) s.addedWeightKg = null;
+  });
+  await tx.table('workoutExercises').toCollection().modify((we) => {
+    if (we.targetRepsMin === undefined) we.targetRepsMin = we.targetReps ?? null;
+    if (we.targetRepsMax === undefined) we.targetRepsMax = we.targetReps ?? null;
+    if (we.supersetGroupId === undefined) we.supersetGroupId = null;
+    if (we.supersetOrder === undefined) we.supersetOrder = null;
+  });
+  await tx.table('templateExercises').toCollection().modify((te) => {
+    if (te.targetRepsMin === undefined) te.targetRepsMin = te.targetReps ?? null;
+    if (te.targetRepsMax === undefined) te.targetRepsMax = te.targetReps ?? null;
+    if (te.supersetGroupId === undefined) te.supersetGroupId = null;
+    if (te.supersetOrder === undefined) te.supersetOrder = null;
+  });
+  await tx.table('exercises').toCollection().modify((e) => {
+    if (e.equipmentType === undefined) e.equipmentType = 'other';
+    if (e.defaultBarId === undefined) e.defaultBarId = null;
+  });
+});
+
+export const SCHEMA_VERSION = 6;
 
 export function newId() {
   return crypto.randomUUID();
