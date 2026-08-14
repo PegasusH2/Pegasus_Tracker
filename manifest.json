@@ -1,6 +1,6 @@
 {
-  "name": "Fitness Tracker",
-  "short_name": "Fitness",
+  "name": "Pegasus Tracker",
+  "short_name": "Pegasus",
   "description": "Diario personal de entrenamiento y seguimiento de progreso físico",
   "start_url": "./index.html",
   "scope": "./",

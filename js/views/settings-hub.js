@@ -45,7 +45,7 @@ function render(mount) {
 
     <div class="card">
       <div class="type-headline" style="margin-bottom:4px;">Aplicación</div>
-      <div class="type-caption text-faint">Fitness Tracker · uso personal, sin cuentas ni servidores. Tus datos viven solo en este dispositivo.</div>
+      <div class="type-caption text-faint">Pegasus Tracker · uso personal, sin cuentas ni servidores. Tus datos viven solo en este dispositivo.</div>
     </div>
   `;
 

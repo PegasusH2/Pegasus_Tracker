@@ -42,10 +42,15 @@ export function sessionVolume(sets, { loadMode = 'total' } = {}) {
   return sets.reduce((sum, s) => sum + effectiveSetVolume(s, { loadMode }), 0);
 }
 
-// "8–10 reps" para un rango, o "8 reps" si min===max (incluye el caso de
-// objetivos antiguos migrados, que siempre tienen min===max===targetReps).
+// "8–10 reps" para un rango, "8 reps" si min===max (incluye el caso de
+// objetivos antiguos migrados, que siempre tienen min===max===targetReps), o
+// "6/8/10/12 reps" cuando hay una progresión/pirámide por serie en vez de un
+// rango uniforme.
 export function describeRepsTarget(we) {
   if (!we) return '';
+  if (Array.isArray(we.targetRepsSequence) && we.targetRepsSequence.length > 1) {
+    return `${we.targetRepsSequence.join('/')} reps`;
+  }
   const { targetRepsMin, targetRepsMax } = we;
   if (targetRepsMin == null && targetRepsMax == null) return '';
   if (targetRepsMin == null || targetRepsMax == null || targetRepsMin === targetRepsMax) {
@@ -54,17 +59,22 @@ export function describeRepsTarget(we) {
   return `${targetRepsMin}–${targetRepsMax} reps`;
 }
 
-// true cuando una serie NORMAL alcanza el techo del rango objetivo con, como
+// true cuando una serie NORMAL alcanza su objetivo de repeticiones con, como
 // mucho, el RIR objetivo — nunca cambia el peso, solo informa (ver sección 4
 // del pedido: "puede indicar... y sugerir", jamás ajustar automáticamente).
+// Si hay progresión por serie, el objetivo de ESTA serie es el que le toca en
+// targetRepsSequence (no el techo global del rango).
 export function checkRangeCompletion(set, we) {
   if (!we || !set) return false;
   if ((set.type ?? 'normal') !== 'normal') return false;
   // La serie debe estar realmente registrada (peso + reps), no solo prellenada
   // con el objetivo al copiar la plantilla — si no, cualquier serie vacía
   // "completaría el rango" con las reps de plantilla sin haberse hecho.
-  if (set.weight == null || set.reps == null || we.targetRepsMax == null) return false;
-  if (set.reps < we.targetRepsMax) return false;
+  if (set.weight == null || set.reps == null) return false;
+  const sequence = Array.isArray(we.targetRepsSequence) && we.targetRepsSequence.length ? we.targetRepsSequence : null;
+  const target = sequence ? (sequence[set.setNumber - 1] ?? sequence[sequence.length - 1]) : we.targetRepsMax;
+  if (target == null) return false;
+  if (set.reps < target) return false;
   if (we.targetRir != null && set.rir != null && set.rir > we.targetRir) return false;
   return true;
 }

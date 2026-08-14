@@ -12,7 +12,8 @@ const DEFAULTS = {
   weightProgressUnit: 'kg',
   weightLastInputUnit: 'kg',
   progressSections: { general: true, peso: true, medidas: true, plicometro: true },
-  templatesGridCollapsed: null, // null = automático (colapsado en cuanto ya tienes alguna rutina); true/false = el usuario lo tocó a mano
+  templatesGridCollapsed: null, // "Mis rutinas" — null = automático (colapsado en cuanto ya tienes alguna rutina); true/false = el usuario lo tocó a mano
+  actionsCollapsed: false, // "Acciones" — expandido por defecto
 };
 
 let cache = { ...DEFAULTS };
@@ -32,7 +33,7 @@ function clampUnits(state) {
 }
 
 export async function loadSettingsCache() {
-  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed] = await Promise.all([
+  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed] = await Promise.all([
     repo.getSetting('onboardingCompleted', DEFAULTS.onboardingCompleted),
     repo.getSetting('userName', DEFAULTS.userName),
     repo.getSetting('weightUnitsEnabled', DEFAULTS.weightUnitsEnabled),
@@ -40,8 +41,9 @@ export async function loadSettingsCache() {
     repo.getSetting('weightLastInputUnit', DEFAULTS.weightLastInputUnit),
     repo.getSetting('progressSections', DEFAULTS.progressSections),
     repo.getSetting('templatesGridCollapsed', DEFAULTS.templatesGridCollapsed),
+    repo.getSetting('actionsCollapsed', DEFAULTS.actionsCollapsed),
   ]);
-  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed });
+  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed });
   loaded = true;
   return cache;
 }
@@ -61,6 +63,7 @@ export function isAnyProgressSectionEnabled() {
   return Object.values(cache.progressSections).some(Boolean);
 }
 export function getTemplatesGridCollapsed() { ensureLoaded(); return cache.templatesGridCollapsed; }
+export function getActionsCollapsed() { ensureLoaded(); return cache.actionsCollapsed; }
 
 export async function setOnboardingCompleted(value) {
   cache.onboardingCompleted = value;
@@ -104,4 +107,9 @@ export async function setProgressSection(key, enabled) {
 export async function setTemplatesGridCollapsed(value) {
   cache.templatesGridCollapsed = value;
   await repo.setSetting('templatesGridCollapsed', value);
+}
+
+export async function setActionsCollapsed(value) {
+  cache.actionsCollapsed = value;
+  await repo.setSetting('actionsCollapsed', value);
 }

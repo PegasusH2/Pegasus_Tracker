@@ -26,6 +26,7 @@ export async function createExercise({ name, muscleGroup = '', notes = '', loadM
     equipmentType,
     defaultBarId,
     archived: false,
+    isFavorite: false,
     createdAt: new Date().toISOString(),
   };
   await db.exercises.add(exercise);
@@ -40,8 +41,33 @@ export async function setExerciseArchived(id, archived) {
   await db.exercises.update(id, { archived });
 }
 
+export async function setExerciseFavorite(id, isFavorite) {
+  await db.exercises.update(id, { isFavorite });
+}
+
 export async function deleteExercise(id) {
   await db.exercises.delete(id);
+}
+
+// Ejercicios usados en los entrenamientos más recientes, sin repetir, en
+// orden de uso más reciente primero — no necesita tabla propia, se deriva de
+// los workouts ya guardados (ver core: selector "Recientes" al crear rutina).
+export async function getRecentExercises(limit = 10) {
+  const workouts = (await db.workouts.toArray()).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const seen = new Set();
+  const result = [];
+  for (const w of workouts) {
+    if (result.length >= limit) break;
+    const wes = (await db.workoutExercises.where('workoutId').equals(w.id).toArray()).sort((a, b) => a.order - b.order);
+    for (const we of wes) {
+      if (seen.has(we.exerciseId)) continue;
+      seen.add(we.exerciseId);
+      const exercise = await db.exercises.get(we.exerciseId);
+      if (exercise && !exercise.archived) result.push(exercise);
+      if (result.length >= limit) break;
+    }
+  }
+  return result;
 }
 
 // ---------- Entrenamientos ----------
@@ -134,6 +160,8 @@ export async function addExerciseToWorkout(workoutId, exerciseId, targets = {}) 
     targetRepsMax: repsMax,
     targetRir: targets.targetRir ?? null,
     targetRestSeconds: targets.targetRestSeconds ?? null,
+    targetRepsSequence: targets.targetRepsSequence ?? null,
+    targetWeightSequence: targets.targetWeightSequence ?? null,
   };
   await db.workoutExercises.add(we);
   return we;
@@ -197,12 +225,13 @@ export async function getTemplate(id) {
   return db.templates.get(id);
 }
 
-export async function createTemplate({ name, icon }) {
+export async function createTemplate({ name, icon, description = '' }) {
   const existing = await db.templates.toArray();
   const template = {
     id: newId(),
     name: name.trim(),
     icon: icon || 'pierna',
+    description: description.trim(),
     order: existing.length,
     createdAt: new Date().toISOString(),
   };
@@ -259,6 +288,10 @@ export async function addTemplateExercise(templateId, exerciseId, values = {}) {
     targetRepsMax: repsMax,
     targetRir: values.targetRir ?? null,
     targetRestSeconds: values.targetRestSeconds ?? null,
+    // Progresión/pirámide por serie (ej. "6/8/10/12") — cuando existen, priman
+    // sobre targetRepsMin/Max al crear las series de una sesión nueva.
+    targetRepsSequence: values.targetRepsSequence ?? null,
+    targetWeightSequence: values.targetWeightSequence ?? null,
     notes: values.notes ?? '',
     defaultSetType: values.defaultSetType ?? 'normal',
     defaultLastSetOnly: values.defaultLastSetOnly ?? false,
@@ -313,18 +346,26 @@ export async function startWorkoutFromTemplate(templateId, { date }) {
       targetRepsMax: te.targetRepsMax ?? te.targetReps,
       targetRir: te.targetRir,
       targetRestSeconds: te.targetRestSeconds,
+      targetRepsSequence: te.targetRepsSequence ?? null,
+      targetWeightSequence: te.targetWeightSequence ?? null,
     });
     const lastEntry = await getLastSessionForExercise(te.exerciseId);
     const lastSets = lastEntry?.sets ?? [];
     const setCount = Math.max(1, te.targetSets || 1);
-    const prefillReps = te.targetRepsMax ?? te.targetRepsMin ?? te.targetReps ?? null;
+    const repsSequence = Array.isArray(te.targetRepsSequence) && te.targetRepsSequence.length ? te.targetRepsSequence : null;
+    const weightSequence = Array.isArray(te.targetWeightSequence) && te.targetWeightSequence.length ? te.targetWeightSequence : null;
+    // Rango uniforme (sin progresión por serie): el valor por defecto es el
+    // extremo INFERIOR, no el superior — ej. objetivo "8-12" -> se prellena 8.
+    const rangeDefaultReps = te.targetRepsMin ?? te.targetRepsMax ?? te.targetReps ?? null;
     const defaultSetType = te.defaultSetType ?? 'normal';
     for (let i = 0; i < setCount; i++) {
       const isLastSet = i === setCount - 1;
       const usesSpecialType = defaultSetType !== 'normal' && (!te.defaultLastSetOnly || isLastSet);
+      const plannedReps = repsSequence ? (repsSequence[i] ?? repsSequence[repsSequence.length - 1]) : rangeDefaultReps;
+      const plannedWeight = weightSequence ? (weightSequence[i] ?? weightSequence[weightSequence.length - 1]) : null;
       await addSet(we.id, {
-        weight: lastSets[i]?.weight ?? null,
-        reps: lastSets[i]?.reps ?? prefillReps,
+        weight: lastSets[i]?.weight ?? plannedWeight,
+        reps: lastSets[i]?.reps ?? plannedReps,
         type: usesSpecialType ? defaultSetType : 'normal',
         restPauseExtra: usesSpecialType && defaultSetType === 'restpause' ? te.defaultRestPauseExtra : null,
         dropSteps: usesSpecialType && defaultSetType === 'descendente' ? te.defaultDropSteps : null,

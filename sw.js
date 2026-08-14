@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fitness-tracker-v18';
+const CACHE_VERSION = 'fitness-tracker-v25';
 
 const PRECACHE_URLS = [
   './',
@@ -31,6 +31,7 @@ const PRECACHE_URLS = [
   './js/views/workout-session.js',
   './js/views/workout-history.js',
   './js/views/workout-calendar.js',
+  './js/views/routine-wizard.js',
   './js/views/templates.js',
   './js/views/progress-hub.js',
   './js/views/bodyweight.js',
