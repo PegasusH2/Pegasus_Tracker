@@ -89,7 +89,8 @@ async function renderStep2(mount, state) {
       ${TABS.map((t) => `<button type="button" class="subtab ${t.key === state.tab ? 'active' : ''}" data-tab="${t.key}">${t.label}</button>`).join('')}
     </div>
     <div id="rw-ex-list" style="margin-bottom:var(--space-4);"></div>
-    <button class="btn btn-secondary btn-block" id="rw-create-exercise" style="margin-bottom:var(--space-5);">+ Crear ejercicio personalizado</button>
+    <button class="btn btn-secondary btn-block" id="rw-create-exercise" style="margin-bottom:8px;">+ Crear ejercicio personalizado</button>
+    <button class="btn btn-secondary btn-block" id="rw-create-bulk" style="margin-bottom:var(--space-5);">+ Dar de alta varios ejercicios a la vez</button>
     <button class="btn btn-primary btn-block" id="rw-continue">Continuar${state.selected.length ? ` (${state.selected.length})` : ''}</button>
   `;
 
@@ -107,6 +108,7 @@ async function renderStep2(mount, state) {
     renderExerciseList(mount, state);
   });
   mount.querySelector('#rw-create-exercise').addEventListener('click', () => openCreateExerciseSheet(mount, state));
+  mount.querySelector('#rw-create-bulk').addEventListener('click', () => openBulkCreateExerciseSheet(mount, state));
   mount.querySelector('#rw-continue').addEventListener('click', () => renderStep3(mount, state));
 
   await renderExerciseList(mount, state);
@@ -216,6 +218,46 @@ function openCreateExerciseSheet(mount, state) {
         renderExerciseList(mount, state);
         const continueBtn = mount.querySelector('#rw-continue');
         if (continueBtn) continueBtn.textContent = `Continuar${state.selected.length ? ` (${state.selected.length})` : ''}`;
+      });
+    },
+  });
+}
+
+// Alta rápida de varios ejercicios nuevos a la vez — un nombre por línea,
+// con el grupo muscular opcional tras un guion (ej. "Sentadilla - Pierna").
+// Todos se crean como ejercicios reales de la biblioteca y se añaden ya
+// seleccionados a la rutina, en el mismo orden en que se escribieron.
+function openBulkCreateExerciseSheet(mount, state) {
+  openSheet(`
+    <h3 class="type-headline" style="margin-bottom:8px;">Dar de alta varios ejercicios</h3>
+    <p class="type-caption text-faint" style="margin-bottom:12px;">Uno por línea. Añade el grupo muscular opcionalmente después de un guion — ej. "Sentadilla - Pierna".</p>
+    <div class="field">
+      <textarea id="bulk-ex-names" rows="6" placeholder="Press banca - Pecho&#10;Sentadilla - Pierna&#10;Dominadas" autofocus></textarea>
+    </div>
+    <button class="btn btn-primary btn-block" id="bulk-ex-save">Crear y añadir todos</button>
+  `, {
+    onMount: (sheet, close) => {
+      sheet.querySelector('#bulk-ex-save').addEventListener('click', async () => {
+        const raw = sheet.querySelector('#bulk-ex-names').value;
+        const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+        if (!lines.length) { toast('Escribe al menos un ejercicio'); return; }
+
+        let created = 0;
+        for (const line of lines) {
+          const [namePart, ...rest] = line.split(' - ');
+          const name = namePart.trim();
+          if (!name) continue;
+          const muscleGroup = rest.join(' - ').trim();
+          const exercise = await repo.createExercise({ name, muscleGroup });
+          state.selected.push({ exercise });
+          created++;
+        }
+
+        close();
+        renderExerciseList(mount, state);
+        const continueBtn = mount.querySelector('#rw-continue');
+        if (continueBtn) continueBtn.textContent = `Continuar${state.selected.length ? ` (${state.selected.length})` : ''}`;
+        toast(`${created} ejercicio${created === 1 ? '' : 's'} creado${created === 1 ? '' : 's'} y añadido${created === 1 ? '' : 's'}`);
       });
     },
   });

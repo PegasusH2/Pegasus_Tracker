@@ -193,6 +193,7 @@ function buildProgramState(rawRoutines, existingExercises) {
     routines: rawRoutines.map((r) => ({
       tempRoutineId: uid('r'),
       workoutName: r.workoutName,
+      description: r.description || '',
       unrecognized: r.unrecognized,
       items: r.exercises.map((e) => {
         const match = matchExerciseName(e.recognizedName, existingExercises);
@@ -215,9 +216,10 @@ function routeAfterAnalysis(mount, structureConfidence, programState, file, mode
 function mergeToSingleRoutine(programState) {
   const routines = programState.routines;
   const name = routines[0]?.workoutName || 'Entrenamiento importado';
+  const description = [...new Set(routines.map((r) => r.description).filter(Boolean))].join('\n');
   const items = routines.flatMap((r) => r.items);
   const unrecognized = routines.flatMap((r) => r.unrecognized);
-  return { routines: [{ tempRoutineId: uid('r'), workoutName: name, items, unrecognized }] };
+  return { routines: [{ tempRoutineId: uid('r'), workoutName: name, description, items, unrecognized }] };
 }
 
 function renderAmbiguousChoice(mount, programState, file, mode) {
@@ -250,22 +252,52 @@ function renderProgramReview(mount, programState, file, mode) {
   paintProgramList(mount, programState, file, mode);
 }
 
+function countUnresolved(programState) {
+  return programState.routines.reduce((sum, r) => sum + r.items.filter((it) => !it.matchedExercise).length, 0);
+}
+
 function paintProgramList(mount, programState, file, mode) {
   const count = programState.routines.length;
+  const unresolvedCount = countUnresolved(programState);
   mount.innerHTML = `
     <h1 class="type-title" style="margin-bottom:4px;">${count === 1 ? '1 rutina detectada' : `${count} rutinas detectadas`}</h1>
     <p class="type-caption text-faint" style="margin-bottom:var(--space-4);">Revisa y corrige — nada se guarda todavía. Se crearán como rutinas reutilizables, no como entrenos de hoy.</p>
 
     <div class="action-card-list" id="pr-list" style="margin-bottom:var(--space-5);"></div>
 
+    ${unresolvedCount ? `<button class="btn btn-secondary btn-block" id="pr-resolve-all" style="margin-bottom:8px;">Dar de alta los ${unresolvedCount} ejercicios pendientes</button>` : ''}
     <button class="btn btn-primary btn-block" id="pr-save">Guardar rutina${count === 1 ? '' : 's'}</button>
     <button class="btn btn-ghost btn-block" id="pr-cancel" style="margin-top:8px;">Cancelar</button>
   `;
 
   renderProgramList(mount, programState, file, mode);
 
+  mount.querySelector('#pr-resolve-all')?.addEventListener('click', () => resolveAllPending(mount, programState, file, mode));
   mount.querySelector('#pr-save').addEventListener('click', () => saveProgram(programState));
   mount.querySelector('#pr-cancel').addEventListener('click', () => navigate('/entreno'));
+}
+
+// Da de alta de golpe todos los ejercicios pendientes de resolver de TODAS
+// las rutinas (no solo la que se esté editando) — el nombre detectado por la
+// IA pasa a ser el nombre real del ejercicio. Si el mismo nombre aparece sin
+// resolver en varias rutinas, se crea una única vez y se reutiliza.
+async function resolveAllPending(mount, programState, file, mode) {
+  const pending = programState.routines.flatMap((r) => r.items.filter((it) => !it.matchedExercise));
+  if (!pending.length) return;
+
+  const createdByName = new Map();
+  for (const it of pending) {
+    const key = it.recognizedName.trim().toLowerCase();
+    let exercise = createdByName.get(key);
+    if (!exercise) {
+      exercise = await repo.createExercise({ name: it.recognizedName.trim() });
+      createdByName.set(key, exercise);
+    }
+    it.matchedExercise = exercise;
+  }
+
+  toast(`${pending.length} ejercicio${pending.length === 1 ? '' : 's'} dado${pending.length === 1 ? '' : 's'} de alta`);
+  paintProgramList(mount, programState, file, mode);
 }
 
 function renderProgramList(mount, programState, file, mode) {
@@ -330,6 +362,9 @@ function openRoutineMenu(mount, programState, id, file, mode) {
         const next = programState.routines[idx + 1];
         routine.items = [...routine.items, ...next.items];
         routine.unrecognized = [...routine.unrecognized, ...next.unrecognized];
+        if (next.description && next.description !== routine.description) {
+          routine.description = [routine.description, next.description].filter(Boolean).join('\n');
+        }
         programState.routines.splice(idx + 1, 1);
         paintProgramList(mount, programState, file, mode);
       });
@@ -374,11 +409,18 @@ function renderRoutineEditor(mount, programState, routineId, file, mode) {
 function paintRoutineEditor(mount, programState, routine, file, mode) {
   const hasSupersets = routine.items.some((it) => it.supersetGroup);
   mount.innerHTML = `
-    <button type="button" class="btn btn-ghost btn-sm" id="re-back" style="margin-bottom:var(--space-3); padding-left:0;">‹ Rutinas</button>
+    <button type="button" class="row" id="re-back" style="align-items:center; gap:6px; margin-bottom:var(--space-4); background:none; padding:0; width:auto;">
+      <span class="re-back-icon" style="pointer-events:none;">${ACTION_ICONS.chevronLeft}</span>
+      <span class="type-headline">Rutinas</span>
+    </button>
 
     <div class="field">
       <label class="label">Nombre de la rutina</label>
       <input type="text" id="re-name" value="${escapeHtml(routine.workoutName)}" />
+    </div>
+    <div class="field">
+      <label class="label">Descripción (opcional)</label>
+      <textarea id="re-desc" rows="2" placeholder="Objetivo, enfoque, notas...">${escapeHtml(routine.description || '')}</textarea>
     </div>
 
     ${hasSupersets ? `<div class="type-caption text-faint" style="margin-bottom:var(--space-3);">Se detectaron superseries (A1/A2…) — de momento se crean como ejercicios independientes; la agrupación real llegará más adelante.</div>` : ''}
@@ -398,16 +440,18 @@ function paintRoutineEditor(mount, programState, routine, file, mode) {
   const goBack = () => {
     const name = mount.querySelector('#re-name').value.trim();
     routine.workoutName = name || routine.workoutName;
+    routine.description = mount.querySelector('#re-desc').value.trim();
     paintProgramList(mount, programState, file, mode);
   };
   mount.querySelector('#re-back').addEventListener('click', goBack);
   mount.querySelector('#re-name').addEventListener('blur', (e) => { routine.workoutName = e.target.value.trim() || routine.workoutName; });
+  mount.querySelector('#re-desc').addEventListener('blur', (e) => { routine.description = e.target.value.trim(); });
 
   const rerender = () => paintRoutineEditor(mount, programState, routine, file, mode);
   const onSplit = (splitIdx) => {
     const newItems = routine.items.splice(splitIdx);
     if (!newItems.length) return;
-    const newRoutine = { tempRoutineId: uid('r'), workoutName: `${routine.workoutName} (2)`, items: newItems, unrecognized: [] };
+    const newRoutine = { tempRoutineId: uid('r'), workoutName: `${routine.workoutName} (2)`, description: '', items: newItems, unrecognized: [] };
     const idx = programState.routines.indexOf(routine);
     programState.routines.splice(idx + 1, 0, newRoutine);
     toast('Rutina dividida en dos');
@@ -610,7 +654,7 @@ async function saveProgram(programState) {
 
   let firstTemplateId = null;
   for (const routine of programState.routines) {
-    const template = await repo.createTemplate({ name: routine.workoutName });
+    const template = await repo.createTemplate({ name: routine.workoutName, description: routine.description || '' });
     if (!firstTemplateId) firstTemplateId = template.id;
     for (const item of routine.items) {
       const usesSpecialType = item.setType !== 'normal';

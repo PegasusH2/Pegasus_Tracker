@@ -87,13 +87,14 @@ export function validateImportedProgram(raw) {
   const routinesRaw = Array.isArray(raw.routines) ? raw.routines : (raw.exercises ? [raw] : []);
   const routines = routinesRaw.map((r) => ({
     workoutName: cleanStr(r?.workoutName ?? r?.name) ?? 'Entrenamiento importado',
+    description: cleanStr(r?.routineDescription) ?? '',
     exercises: validateExercises(r?.exercises),
     unrecognized: Array.isArray(r?.unrecognized) ? r.unrecognized.filter((s) => typeof s === 'string' && s.trim()) : [],
   }));
   const structureConfidence = STRUCTURE_CONFIDENCES.includes(raw.structureConfidence) ? raw.structureConfidence : null;
   return {
     structureConfidence,
-    routines: routines.length ? routines : [{ workoutName: 'Entrenamiento importado', exercises: [], unrecognized: [] }],
+    routines: routines.length ? routines : [{ workoutName: 'Entrenamiento importado', description: '', exercises: [], unrecognized: [] }],
   };
 }
 
@@ -151,6 +152,73 @@ const MOCK_PROGRAM_ROUTINES = [
     { recognizedName: 'Prensa', sets: 3, repsMin: 10, repsMax: 12, rir: 1, setType: 'normal', confidence: 'high' },
   ], unrecognized: [] },
 ];
+
+// Fixture de REGRESIÓN — caso real: tabla de 4 días (rangos "Nx a-b", rangos
+// con la palabra "a", progresiones sin "x" delante como "12-10-8-6", rest-pause
+// con duración pero sin desglose de reps, y un comentario general de rutina
+// que se repite en varios días). Codifica la interpretación CORRECTA esperada
+// para poder volver a probar el parser/la UI sin depender de la IA real.
+// Uso: mockRegressionFixture4Day() desde la consola o temporalmente en el
+// switch de abajo — no se usa por defecto para no tocar los mocks simples.
+const REGRESSION_NOTE_GENERAL = 'Recuerda que en todos los ejercicios (especialmente en la sentadilla con banco, el press plano y el press militar) debes soltar el aire por la boca (exhalar) siempre en el momento en que haces la fuerza para subir el peso. ¡Cero apneas!';
+
+const REGRESSION_FIXTURE_4DAY = [
+  {
+    workoutName: 'Día 1',
+    routineDescription: REGRESSION_NOTE_GENERAL,
+    exercises: [
+      { recognizedName: 'Remo unilateral apoyado con mancuerna', sets: 4, repsSequence: [12, 10, 8, 6], notes: 'Intenta que a medida que bajamos repeticiones subimos un poquito el peso', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Jalón al pecho', sets: 4, repsMin: 12, repsMax: 12, setType: 'restpause', lastSetOnly: true, notes: 'Poco peso buena técnica. Rest-pause: 20s de descanso interno, en ese descanso intentamos hacer 12.', confidence: 'high' },
+      { recognizedName: 'Press militar sentado', sets: 4, repsSequence: [12, 10, 8, 6], notes: 'Intenta que a medida que bajamos repeticiones subimos un poquito el peso', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Elevaciones laterales mancuerna', sets: 3, repsMin: 10, repsMax: 10, notes: 'Poco peso buena técnica.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Triceps polea alta apoyando codo', sets: 3, repsMin: 10, repsMax: 10, notes: 'Polea arriba y brazo apoyado, debes estar tu cuerpo mirando al lado opuesto de la polea.', setType: 'normal', confidence: 'high' },
+    ],
+    unrecognized: [],
+  },
+  {
+    workoutName: 'Día 2',
+    routineDescription: REGRESSION_NOTE_GENERAL,
+    exercises: [
+      { recognizedName: 'Abductor', sets: 3, repsMin: 10, repsMax: 10, notes: 'Poco peso buena técnica.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Sentadilla con banco', sets: 4, repsMin: 12, repsMax: 12, setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Extensión de quadriceps', sets: 3, repsSequence: [10, 10, 8], notes: 'Aprovecha el máximo al no involucrar el core.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Femoral de pie', sets: 3, repsMin: 10, repsMax: 10, notes: 'Aprovecha el máximo al no involucrar el core.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Gemelo sentado', sets: 3, repsMin: 15, repsMax: 15, notes: 'Aprovecha el máximo al no involucrar el core.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Adductor', sets: 2, repsMin: 10, repsMax: 10, notes: 'Poco peso buena técnica.', setType: 'normal', confidence: 'high' },
+    ],
+    unrecognized: [],
+  },
+  {
+    workoutName: 'Día 3',
+    routineDescription: REGRESSION_NOTE_GENERAL,
+    exercises: [
+      { recognizedName: 'Elevaciones laterales', sets: 3, repsMin: 10, repsMax: 10, notes: 'Poco peso buena técnica.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Pajaros en maquina / Reverse Pec Deck', sets: 2, repsMin: 10, repsMax: 10, setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Press plano', sets: 3, repsMin: 12, repsMax: 12, notes: 'Banco o Multipower lo que te sientas más cómoda.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Press inclinado', sets: 4, repsMin: 10, repsMax: 10, notes: 'Banco o Multipower lo que te sientas más cómoda.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Triceps polea alta barra Z', sets: 3, repsMin: 10, repsMax: 10, notes: 'Codos atrás y a darle duro al tríceps', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Curl de biceps apoyando el codo', sets: 3, repsSequence: [15, 12, 10], notes: 'Busca un punto donde apoyar el codo evitamos balanceos.', setType: 'normal', confidence: 'high' },
+    ],
+    unrecognized: [],
+  },
+  {
+    workoutName: 'Día 4',
+    routineDescription: REGRESSION_NOTE_GENERAL,
+    exercises: [
+      { recognizedName: 'Abductor', sets: 3, repsMin: 10, repsMax: 10, notes: 'Poco peso buena técnica.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Femoral sentado', sets: 3, repsSequence: [10, 10, 8], notes: 'Aprovecha el máximo al no involucrar el core.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Extensión de quadriceps unilateral', sets: 4, repsMin: 8, repsMax: 10, notes: 'Aprovecha el máximo al no involucrar el core.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Patada de glúteo en polea baja', sets: 3, repsMin: 10, repsMax: 12, setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Gemelo de pie', sets: 3, repsMin: 15, repsMax: 15, notes: 'Poco peso buena técnica.', setType: 'normal', confidence: 'high' },
+      { recognizedName: 'Adductor', sets: 2, repsMin: 10, repsMax: 10, notes: 'Poco peso buena técnica.', setType: 'normal', confidence: 'high' },
+    ],
+    unrecognized: [],
+  },
+];
+
+export function mockRegressionFixture4Day() {
+  return validateImportedProgram({ routines: REGRESSION_FIXTURE_4DAY, structureConfidence: 'high' });
+}
 
 // Respuestas simuladas — permiten construir y probar todo el flujo (incluida
 // la rama de confianza media/baja) sin depender de que el Worker ya esté

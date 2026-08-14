@@ -8,22 +8,27 @@ const BASE_PROMPT = `Eres un asistente que interpreta fotos de rutinas de entren
 
 Reglas estrictas:
 - NO inventes datos que no aparezcan en la imagen. Si algo es ambiguo o ilegible, omite ese campo (deja null) en vez de adivinar.
-- "4x8-10" significa 4 series, repsMin=8, repsMax=10. "4x10" significa 4 series, repsMin=10, repsMax=10 (cantidad exacta).
-- REPETICIONES — diferencia SIEMPRE entre un RANGO y una SECUENCIA/PROGRESIÓN por serie. Un guion o una barra entre números NO siempre significa rango: usa el contexto (número de series, presencia de "x", pesos distintos por serie) para decidir:
-  - RANGO: patrón "<series> x <a>-<b>" (ej. "4x6-10", "3x8-12") -> repsMin=a, repsMax=b; deja repsSequence null. Es rango cuando además hay MENOS valores sueltos que series (ej. "3 series" pero solo "8-10", que son 2 valores: no alcanza para una serie por serie, es rango 8-10).
-  - SECUENCIA/PROGRESIÓN: una lista de valores (separados por "/", "-", saltos de línea, o cada uno en su propia serie) CUYA CANTIDAD COINCIDE con el número de series del ejercicio (ej. "4 series" + "6-8-10-12" = 4 valores) -> son objetivos DISTINTOS por serie, en orden -> ponlos en repsSequence=[6,8,10,12] (mismo orden que aparecen), deja repsMin/repsMax null. Vale tanto para progresión ascendente (6/8/10/12) como descendente (12/10/8/6) — respeta el orden tal cual aparece, no lo reordenes.
+- "4x8-10" y "4x8 a 10" significan EXACTAMENTE lo mismo: 4 series, repsMin=8, repsMax=10 — la palabra "a" entre dos números es sinónimo del guion. "4x10" significa 4 series, repsMin=10, repsMax=10 (cantidad exacta).
+- REPETICIONES — diferencia SIEMPRE entre un RANGO y una SECUENCIA/PROGRESIÓN por serie. La señal decisiva es la presencia o ausencia de "<número> x" (series explícitas) delante de los números de reps, NO la cantidad de valores ni el tipo de separador:
+  - Si ves "<N> x <a>-<b>" o "<N> x <a> a <b>" (con una "x" explícita entre el nº de series y el rango) -> RANGO: sets=N, repsMin=a, repsMax=b; deja repsSequence null.
+  - Si ves "<N> x <a>" (un solo número tras la "x") -> cantidad EXACTA: sets=N, repsMin=repsMax=a.
+  - Si ves una lista de 2 o más números SIN ninguna "x" delante (separados por "-", "/", saltos de línea, o cada uno en su propia serie/fila) -> SECUENCIA/PROGRESIÓN, nunca rango, sea cual sea la cantidad de valores: cada número es el objetivo de UNA serie distinta, en el mismo orden en que aparecen (no los reordenes; vale tanto ascendente "6-8-10-12" como descendente "12-10-8-6", e incluye repeticiones iguales como "10-10-8"). El número de series del ejercicio (sets) es la cantidad de valores de la lista. Ponlos en repsSequence=[...] y deja repsMin/repsMax null.
+  - Ejemplo crítico: "12 - 10 - 8 - 6" SIN "x" delante -> repsSequence=[12,10,8,6], sets=4. "4x8 a 10" o "4x8-10" CON "x" delante -> repsMin=8, repsMax=10, sets=4. Nunca conviertas lo primero en un rango simplificado, ni lo segundo en una secuencia inventada.
   - Un peso DISTINTO en cada serie (ej. "20kg x12 / 22kg x10 / 24kg x8") es una señal MUY FUERTE de secuencia, no de rango: pon los pesos en weightSequence=[20,22,24] y las repeticiones correspondientes en repsSequence=[12,10,8], en el mismo orden.
-  - Nunca conviertas una secuencia real ("6-8-10-12") en un rango simplificado ("4x6-10"), ni un rango real en una secuencia inventada. Si el ejercicio no trae número de repeticiones legible, deja repsMin/repsMax/repsSequence null.
+  - Si el ejercicio no trae número de repeticiones legible, deja repsMin/repsMax/repsSequence null.
 - Fallo (F, Fallo, FAIL, Failure, al fallo, x fallo) -> setType="fallo". No inventes un número de repeticiones si no aparece.
 - Rest-pause (RP, Rest Pause, Rest-pause) -> setType="restpause".
 - Descendente/drop set (Drop, Drop set, Descendente, DS) -> setType="descendente".
-- Si la técnica especial (fallo/rest-pause/descendente) se indica solo para la ÚLTIMA serie del ejercicio (ej. "3x10-12, última serie DROP SET"), pon lastSetOnly=true — las demás series de ese ejercicio son normales. Si aplica a TODAS las series (ej. "3xF"), deja lastSetOnly=false/null.
-- Si el rest-pause trae números explícitos ("10+3+2"), ponlos en extraReps=[3,2] (sin contar el bloque principal, que va en repsMin/repsMax). Si el descendente trae pesos/reps explícitos por escalón ("80x10, 60x8, 40x8"), ponlos en steps=[{weight:60,reps:8},{weight:40,reps:8}] (sin incluir el primer escalón, que es el peso/reps principal del ejercicio). Si no hay números explícitos, deja extraReps/steps como null — no inventes valores.
+- Patrón "<N>x<reps> + 1 <técnica> <detalle>" (ej. "3x12 + 1 Rest pause 20\""): sets = N+1 (las N series normales más la serie extra de la técnica), repsMin=repsMax=reps (el objetivo de las series normales), setType según la técnica, lastSetOnly=true (la técnica solo aplica a esa última serie extra, las N primeras son normales).
+- Si la técnica especial (fallo/rest-pause/descendente) se indica solo para la ÚLTIMA serie del ejercicio (ej. "3x10-12, última serie DROP SET"), pon lastSetOnly=true. Si aplica a TODAS las series (ej. "3xF"), deja lastSetOnly=false/null.
+- Si el rest-pause trae números explícitos ("10+3+2"), ponlos en extraReps=[3,2] (sin contar el bloque principal, que va en repsMin/repsMax). Si en cambio trae una DURACIÓN de descanso interno pero SIN desglose numérico de repeticiones (ej. "Rest pause 20\""), NO inventes extraReps — déjalo null y en su lugar anota la duración en "notes" de ese ejercicio (ej. "Rest-pause: 20s de descanso interno"). Si el descendente trae pesos/reps explícitos por escalón ("80x10, 60x8, 40x8"), ponlos en steps=[{weight:60,reps:8},{weight:40,reps:8}] (sin incluir el primer escalón, que es el peso/reps principal del ejercicio). Si no hay números explícitos, deja extraReps/steps como null — no inventes valores.
 - RIR (RIR 2, @2 RIR, 2 RIR) -> campo rir.
 - Superseries: "A1 Ejercicio / A2 Ejercicio", "Ejercicio + Ejercicio" o "Superset: ..." -> asigna la misma letra en supersetGroup y un supersetOrder correlativo (1, 2, 3...) a cada ejercicio del bloque. Si un ejercicio no forma parte de ninguna superserie, deja supersetGroup null.
 - Si se indica un peso (ej. "80kg", "20kg/lado", "20kg mancuerna"), ponlo en weightHintKg tal cual aparece escrito (el peso POR mancuerna/lado si así se indica, nunca lo dupliques).
+- Cualquier comentario o nota junto a un ejercicio concreto (columna "Comentarios", texto en cursiva a su lado, etc.) va en "notes" DE ESE ejercicio.
+- Un comentario GENERAL que no pertenece a un ejercicio concreto (ej. una nota al pie sobre técnica/respiración que menciona varios ejercicios de varios días, un recordatorio general de la rutina) va en "routineDescription" de la rutina — si ese comentario aplica visualmente a varias rutinas/días a la vez, repítelo en el campo "routineDescription" de cada una de esas rutinas. No lo metas como ejercicio ni lo pierdas en "unrecognized".
 - confidence="low" en cualquier ejercicio cuya lectura te genere dudas razonables; "high" en el resto.
-- Cualquier línea de texto que no puedas interpretar como ejercicio, ponla en "unrecognized" DE LA RUTINA a la que pertenezca, no la fuerces dentro de "exercises".
+- Cualquier línea de texto que no puedas interpretar como ejercicio NI como comentario general, ponla en "unrecognized" DE LA RUTINA a la que pertenezca, no la fuerces dentro de "exercises".
 - Responde SOLO con el JSON pedido, en el mismo idioma en que esté escrita la rutina (normalmente español).`;
 
 // La imagen puede contener una única rutina o un programa completo con varias
@@ -92,6 +97,7 @@ const SCHEMA = {
         type: 'OBJECT',
         properties: {
           workoutName: { type: 'STRING', nullable: true },
+          routineDescription: { type: 'STRING', nullable: true },
           exercises: { type: 'ARRAY', items: EXERCISE_SCHEMA },
           unrecognized: { type: 'ARRAY', items: { type: 'STRING' } },
         },
