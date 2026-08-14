@@ -12,6 +12,7 @@ const DEFAULTS = {
   weightProgressUnit: 'kg',
   weightLastInputUnit: 'kg',
   progressSections: { general: true, peso: true, medidas: true, plicometro: true },
+  templatesGridCollapsed: null, // null = automático (colapsado en cuanto ya tienes alguna rutina); true/false = el usuario lo tocó a mano
 };
 
 let cache = { ...DEFAULTS };
@@ -31,15 +32,16 @@ function clampUnits(state) {
 }
 
 export async function loadSettingsCache() {
-  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections] = await Promise.all([
+  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed] = await Promise.all([
     repo.getSetting('onboardingCompleted', DEFAULTS.onboardingCompleted),
     repo.getSetting('userName', DEFAULTS.userName),
     repo.getSetting('weightUnitsEnabled', DEFAULTS.weightUnitsEnabled),
     repo.getSetting('weightProgressUnit', DEFAULTS.weightProgressUnit),
     repo.getSetting('weightLastInputUnit', DEFAULTS.weightLastInputUnit),
     repo.getSetting('progressSections', DEFAULTS.progressSections),
+    repo.getSetting('templatesGridCollapsed', DEFAULTS.templatesGridCollapsed),
   ]);
-  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections });
+  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed });
   loaded = true;
   return cache;
 }
@@ -58,6 +60,7 @@ export function isAnyProgressSectionEnabled() {
   ensureLoaded();
   return Object.values(cache.progressSections).some(Boolean);
 }
+export function getTemplatesGridCollapsed() { ensureLoaded(); return cache.templatesGridCollapsed; }
 
 export async function setOnboardingCompleted(value) {
   cache.onboardingCompleted = value;
@@ -96,4 +99,9 @@ export async function setProgressSection(key, enabled) {
   cache.progressSections = { ...cache.progressSections, [key]: enabled };
   await repo.setSetting('progressSections', cache.progressSections);
   emit('prefs:changed', { key: 'progressSections' });
+}
+
+export async function setTemplatesGridCollapsed(value) {
+  cache.templatesGridCollapsed = value;
+  await repo.setSetting('templatesGridCollapsed', value);
 }
