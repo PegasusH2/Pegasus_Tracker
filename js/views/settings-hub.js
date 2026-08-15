@@ -2,8 +2,14 @@ import * as settings from '../core/settings.js';
 import * as repo from '../db/repository.js';
 import { openSheet, openConfirmSheet } from '../core/ui.js';
 import { escapeHtml } from '../core/escape.js';
-import { toast } from '../core/store.js';
+import { toast, on } from '../core/store.js';
 import { navigate } from '../app.js';
+import { adminLogin } from '../core/ai-import.js';
+
+let currentMount = null;
+on('prefs:changed', ({ key }) => {
+  if (key === 'devModeUnlocked' && currentMount) render(currentMount);
+});
 
 const SECTION_LABELS = {
   general: 'Progreso general',
@@ -17,6 +23,7 @@ export async function renderSettingsHub(mount) {
 }
 
 function render(mount) {
+  currentMount = mount;
   const name = settings.getUserName();
   mount.innerHTML = `
     <h1 class="type-title" style="margin-bottom:var(--space-5);">Ajustes</h1>
@@ -41,6 +48,12 @@ function render(mount) {
         <span class="type-body" style="font-weight:600;">Datos</span>
         <span class="text-faint">›</span>
       </div>
+      ${settings.isDevModeUnlocked() ? `
+        <div class="grouped-row" id="row-dev" style="cursor:pointer;">
+          <span class="type-body" style="font-weight:600;">Modo desarrollador</span>
+          <span class="text-faint">${settings.isAdminSessionActive() ? 'Activo ›' : '›'}</span>
+        </div>
+      ` : ''}
     </div>
 
     <div class="card">
@@ -53,6 +66,89 @@ function render(mount) {
   mount.querySelector('#row-pesos').addEventListener('click', () => openPesosSheet());
   mount.querySelector('#row-personalizar').addEventListener('click', () => openPersonalizarSheet());
   mount.querySelector('#row-datos').addEventListener('click', () => navigate('/ajustes/datos'));
+  mount.querySelector('#row-dev')?.addEventListener('click', () => openDevModeSheet(mount));
+}
+
+// Modo desarrollador — inicia sesión con la contraseña de administrador
+// configurada como secreto del Worker (nunca se guarda aquí, ni en
+// localStorage/IndexedDB: solo persiste la sesión temporal que devuelve el
+// Worker, ver js/core/settings.js#adminSession). Sirve para probar la
+// importación por IA sin el límite de peticiones de un usuario normal.
+function openDevModeSheet(mount) {
+  openSheet('<div id="dev-content"></div>', {
+    onMount: (sheet, close) => paintDevModeSheet(sheet.querySelector('#dev-content'), close, mount),
+  });
+}
+
+function paintDevModeSheet(box, close, mount) {
+  const active = settings.isAdminSessionActive();
+  const session = settings.getAdminSession();
+
+  if (active) {
+    const expires = new Date(session.expiresAt);
+    box.innerHTML = `
+      <h3 class="type-headline" style="margin-bottom:6px;">Modo desarrollador</h3>
+      <p class="type-body" style="margin-bottom:2px;">
+        <span style="color:var(--accent); font-weight:700;">● Administrador activo</span>
+      </p>
+      <p class="type-caption text-faint" style="margin-bottom:20px;">
+        Sesión válida hasta ${expires.toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })}.
+        Mientras esté activa, la importación por foto no está sujeta al límite de peticiones normal.
+      </p>
+      <button class="btn btn-danger btn-block" id="dev-logout">Cerrar sesión</button>
+    `;
+    box.querySelector('#dev-logout').addEventListener('click', async () => {
+      await settings.clearAdminSession();
+      toast('Sesión de administrador cerrada');
+      close();
+      render(mount);
+    });
+    return;
+  }
+
+  box.innerHTML = `
+    <h3 class="type-headline" style="margin-bottom:6px;">Modo desarrollador</h3>
+    <p class="type-caption text-faint" style="margin-bottom:16px;">
+      Inicia sesión con tu contraseña de administrador para probar la
+      importación por IA sin el límite de peticiones normal. La contraseña
+      nunca se guarda en este dispositivo.
+    </p>
+    <div class="field">
+      <label class="label">Contraseña de administrador</label>
+      <input type="password" id="dev-password" autocomplete="off" autofocus />
+    </div>
+    <button class="btn btn-primary btn-block" id="dev-login">Iniciar sesión</button>
+  `;
+
+  const loginBtn = box.querySelector('#dev-login');
+  const passwordInput = box.querySelector('#dev-password');
+
+  async function attemptLogin() {
+    const password = passwordInput.value;
+    if (!password) { toast('Escribe la contraseña'); return; }
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Comprobando…';
+    try {
+      const session = await adminLogin(password);
+      await settings.setAdminSession(session);
+      toast('Administrador activo');
+      paintDevModeSheet(box, close, mount);
+      render(mount);
+    } catch (err) {
+      const messages = {
+        INVALID_PASSWORD: 'Contraseña incorrecta',
+        RATE_LIMITED: 'Demasiados intentos, espera un poco',
+        NETWORK_ERROR: 'No se pudo conectar con el servidor',
+        WORKER_NOT_CONFIGURED: 'El Worker de IA no está configurado',
+      };
+      toast(messages[err.message] || 'No se pudo iniciar sesión');
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Iniciar sesión';
+    }
+  }
+
+  loginBtn.addEventListener('click', attemptLogin);
+  passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') attemptLogin(); });
 }
 
 function openPerfilSheet(mount) {

@@ -16,7 +16,7 @@ import { renderSettingsBackup } from './views/settings-backup.js';
 import { renderSettingsHub } from './views/settings-hub.js';
 import { hasExistingUserData, runOnboarding } from './views/onboarding.js';
 import { NAV_ICONS } from './core/ui.js';
-import { on } from './core/store.js';
+import { on, toast } from './core/store.js';
 import * as settings from './core/settings.js';
 
 const ALL_TABS = [
@@ -109,6 +109,29 @@ function renderShell() {
 
 let currentTab = null;
 
+// Modo desarrollador oculto — 5 toques seguidos (en menos de 2s entre uno y
+// el siguiente) sobre el icono de Ajustes de la barra inferior lo
+// desbloquea permanentemente. El contador vive aquí porque el icono de
+// Ajustes puede tocarse repetidamente sin cambiar de hash (ya estando en
+// /ajustes), así que no siempre se vuelve a montar renderBottomNav entre
+// toque y toque.
+const DEV_UNLOCK_TAPS = 5;
+const DEV_UNLOCK_WINDOW_MS = 2000;
+let devTapCount = 0;
+let devTapTimer = null;
+
+function handleSettingsIconTap() {
+  if (settings.isDevModeUnlocked()) return;
+  clearTimeout(devTapTimer);
+  devTapCount++;
+  if (devTapCount >= DEV_UNLOCK_TAPS) {
+    devTapCount = 0;
+    settings.unlockDevMode().then(() => toast('Modo desarrollador desbloqueado'));
+    return;
+  }
+  devTapTimer = setTimeout(() => { devTapCount = 0; }, DEV_UNLOCK_WINDOW_MS);
+}
+
 function renderBottomNav(activeTab) {
   currentTab = activeTab;
   const nav = document.getElementById('bottom-nav');
@@ -118,6 +141,9 @@ function renderBottomNav(activeTab) {
       <span class="nav-dot"></span>
     </a>
   `).join('');
+
+  const ajustesLink = nav.querySelector('a[href="#/ajustes"]');
+  ajustesLink?.addEventListener('click', handleSettingsIconTap);
 }
 
 on('prefs:changed', ({ key }) => {

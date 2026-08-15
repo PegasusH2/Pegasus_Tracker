@@ -236,20 +236,24 @@ async function mockAnalyzeProgramPhoto(mode) {
   return validateImportedProgram({ routines: MOCK_PROGRAM_ROUTINES.slice(0, 2), structureConfidence: 'low' });
 }
 
-export async function analyzeWorkoutPhoto(file, mode = 'auto') {
+export async function analyzeWorkoutPhoto(file, mode = 'auto', { adminToken } = {}) {
   if (!WORKER_URL) return mockAnalyzeProgramPhoto(mode);
 
   const { base64, mimeType } = await resizeImageForUpload(file);
+  const headers = { 'Content-Type': 'application/json', 'X-App-Token': APP_SHARED_TOKEN };
+  if (adminToken) headers['X-Admin-Session'] = adminToken;
+
   let res;
   try {
     res = await fetch(WORKER_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Token': APP_SHARED_TOKEN },
+      headers,
       body: JSON.stringify({ image: base64, mimeType, mode }),
     });
   } catch {
     throw new Error('NETWORK_ERROR');
   }
+  if (res.status === 429) throw new Error('RATE_LIMITED');
   if (!res.ok) throw new Error('ANALYSIS_FAILED');
 
   let raw;
@@ -259,4 +263,36 @@ export async function analyzeWorkoutPhoto(file, mode = 'auto') {
     throw new Error('INVALID_RESPONSE');
   }
   return validateImportedProgram(raw);
+}
+
+// Modo administrador — inicia sesión contra el Worker con la contraseña que
+// SOLO tú conoces (nunca se guarda: ni aquí, ni en localStorage, ni en
+// IndexedDB). Lo único que persiste localmente es la sesión temporal que
+// devuelve el Worker, que caduca sola y puede revocarse por completo
+// rotando/borrando ADMIN_SECRET en Cloudflare sin tocar la PWA.
+export async function adminLogin(password) {
+  if (!WORKER_URL) throw new Error('WORKER_NOT_CONFIGURED');
+
+  let res;
+  try {
+    res = await fetch(`${WORKER_URL}/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+  } catch {
+    throw new Error('NETWORK_ERROR');
+  }
+  if (res.status === 401) throw new Error('INVALID_PASSWORD');
+  if (res.status === 429) throw new Error('RATE_LIMITED');
+  if (!res.ok) throw new Error('LOGIN_FAILED');
+
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error('INVALID_RESPONSE');
+  }
+  if (!data?.token || !data?.expiresAt) throw new Error('INVALID_RESPONSE');
+  return { token: data.token, expiresAt: data.expiresAt };
 }

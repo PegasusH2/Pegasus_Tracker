@@ -14,6 +14,8 @@ const DEFAULTS = {
   progressSections: { general: true, peso: true, medidas: true, plicometro: true },
   templatesGridCollapsed: null, // "Mis rutinas" — null = automático (colapsado en cuanto ya tienes alguna rutina); true/false = el usuario lo tocó a mano
   actionsCollapsed: false, // "Acciones" — expandido por defecto
+  adminSession: null, // { token, expiresAt } — sesión temporal de administrador emitida por el Worker; NUNCA la contraseña/secreto (ver js/core/ai-import.js)
+  devModeUnlocked: false, // se desbloquea tocando 5 veces el icono de Ajustes de la barra inferior (ver js/app.js) — una vez desbloqueado, permanece así
 };
 
 let cache = { ...DEFAULTS };
@@ -33,7 +35,7 @@ function clampUnits(state) {
 }
 
 export async function loadSettingsCache() {
-  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed] = await Promise.all([
+  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked] = await Promise.all([
     repo.getSetting('onboardingCompleted', DEFAULTS.onboardingCompleted),
     repo.getSetting('userName', DEFAULTS.userName),
     repo.getSetting('weightUnitsEnabled', DEFAULTS.weightUnitsEnabled),
@@ -42,8 +44,10 @@ export async function loadSettingsCache() {
     repo.getSetting('progressSections', DEFAULTS.progressSections),
     repo.getSetting('templatesGridCollapsed', DEFAULTS.templatesGridCollapsed),
     repo.getSetting('actionsCollapsed', DEFAULTS.actionsCollapsed),
+    repo.getSetting('adminSession', DEFAULTS.adminSession),
+    repo.getSetting('devModeUnlocked', DEFAULTS.devModeUnlocked),
   ]);
-  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed });
+  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked });
   loaded = true;
   return cache;
 }
@@ -64,6 +68,35 @@ export function isAnyProgressSectionEnabled() {
 }
 export function getTemplatesGridCollapsed() { ensureLoaded(); return cache.templatesGridCollapsed; }
 export function getActionsCollapsed() { ensureLoaded(); return cache.actionsCollapsed; }
+
+// Sesión de administrador — { token, expiresAt } o null. El token es una
+// credencial TEMPORAL emitida por el Worker (no la contraseña); caduca sola
+// y se puede revocar por completo rotando ADMIN_SECRET en Cloudflare.
+export function getAdminSession() { ensureLoaded(); return cache.adminSession; }
+export function isAdminSessionActive() {
+  ensureLoaded();
+  return !!cache.adminSession && cache.adminSession.expiresAt > Date.now();
+}
+export async function setAdminSession(session) {
+  cache.adminSession = session;
+  await repo.setSetting('adminSession', session);
+  emit('prefs:changed', { key: 'adminSession' });
+}
+export async function clearAdminSession() {
+  await setAdminSession(null);
+}
+
+// Modo desarrollador — oculto por defecto; se revela tocando 5 veces el
+// icono de Ajustes de la barra inferior (ver js/app.js). Una vez
+// desbloqueado permanece así (no hay forma de volver a ocultarlo desde la
+// UI, igual que "Opciones de desarrollador" en Android/iOS).
+export function isDevModeUnlocked() { ensureLoaded(); return cache.devModeUnlocked; }
+export async function unlockDevMode() {
+  if (cache.devModeUnlocked) return;
+  cache.devModeUnlocked = true;
+  await repo.setSetting('devModeUnlocked', true);
+  emit('prefs:changed', { key: 'devModeUnlocked' });
+}
 
 export async function setOnboardingCompleted(value) {
   cache.onboardingCompleted = value;

@@ -3,6 +3,16 @@
 // este Worker (wrangler secret put GEMINI_API_KEY) — nunca en el repo ni en
 // la PWA. Este archivo no se despliega a GitHub Pages; se despliega aparte
 // con `wrangler deploy` desde esta misma carpeta (ver README.md).
+//
+// Modo administrador (pruebas sin rate limiting) — ver worker/README.md:
+// - ADMIN_SECRET vive SOLO como secreto de este Worker (wrangler secret put
+//   ADMIN_SECRET). Nunca en el repo, nunca en la PWA, nunca en logs.
+// - Se usa dos veces: para validar la contraseña en /admin/login, y como
+//   clave de firma HMAC de la sesión emitida. Esto hace que rotar/borrar
+//   ADMIN_SECRET revoque TODAS las sesiones ya emitidas al instante, sin
+//   tocar la PWA (ver verifyAdminSessionToken).
+// - La sesión (token temporal, no la contraseña) es lo único que llega al
+//   cliente, y caduca sola — nunca se guarda en el Worker (stateless).
 
 const BASE_PROMPT = `Eres un asistente que interpreta fotos de rutinas de entrenamiento de gimnasio (papel, pizarra, captura de pantalla) y las convierte en JSON estructurado.
 
@@ -110,11 +120,116 @@ const SCHEMA = {
 
 const MAX_BASE64_LENGTH = 8_000_000; // ~6MB de imagen real tras base64
 
+// ---------- Rate limiting (KV, por IP y ventana de tiempo) ----------
+// Contador simple con expiración automática (expirationTtl). No es
+// perfectamente atómico bajo concurrencia muy alta, pero es más que
+// suficiente para frenar abuso a la escala de uso personal de esta app.
+// Si el binding RATE_LIMIT_KV todavía no existe (falta crear el namespace,
+// ver README), se falla ABIERTO (no bloquea) para no romper la función
+// principal por una pieza nueva a medio configurar.
+const RATE_LIMIT_WINDOW_SECONDS = 3600; // 1 hora
+const RATE_LIMIT_MAX_REQUESTS = 10; // peticiones normales de análisis por IP y hora
+const LOGIN_RATE_LIMIT_MAX = 10; // intentos de login de admin por IP y hora
+
+async function checkRateLimit(env, key, max, windowSeconds) {
+  if (!env.RATE_LIMIT_KV) return true;
+  const bucket = Math.floor(Date.now() / (windowSeconds * 1000));
+  const fullKey = `${key}:${bucket}`;
+  const current = parseInt(await env.RATE_LIMIT_KV.get(fullKey), 10) || 0;
+  if (current >= max) return false;
+  await env.RATE_LIMIT_KV.put(fullKey, String(current + 1), { expirationTtl: windowSeconds + 60 });
+  return true;
+}
+
+function getClientIp(request) {
+  return request.headers.get('CF-Connecting-IP') || 'unknown';
+}
+
+// ---------- Comparación en tiempo constante (evita timing attacks sobre
+// la contraseña de administrador) ----------
+function constantTimeEqual(a, b) {
+  const ea = new TextEncoder().encode(String(a ?? ''));
+  const eb = new TextEncoder().encode(String(b ?? ''));
+  const len = Math.max(ea.length, eb.length, 1);
+  let diff = ea.length === eb.length ? 0 : 1;
+  for (let i = 0; i < len; i++) diff |= (ea[i] ?? 0) ^ (eb[i] ?? 0);
+  return diff === 0;
+}
+
+// ---------- Sesión de administrador — token firmado con HMAC, sin estado
+// en el Worker (stateless). Revocar = rotar/borrar ADMIN_SECRET. ----------
+const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 horas
+
+function bytesToBase64Url(bytes) {
+  let str = '';
+  for (const b of bytes) str += String.fromCharCode(b);
+  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function base64UrlToBytes(b64) {
+  const normalized = b64.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  const bin = atob(padded);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+function encodeJsonBase64Url(obj) {
+  return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(obj)));
+}
+function decodeJsonBase64Url(b64) {
+  return JSON.parse(new TextDecoder().decode(base64UrlToBytes(b64)));
+}
+
+async function hmacSignBase64Url(message, secret) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
+  return bytesToBase64Url(new Uint8Array(sig));
+}
+
+async function createAdminSessionToken(secret) {
+  const payload = { role: 'admin', iat: Date.now(), exp: Date.now() + ADMIN_SESSION_TTL_MS };
+  const payloadB64 = encodeJsonBase64Url(payload);
+  const sig = await hmacSignBase64Url(payloadB64, secret);
+  return { token: `${payloadB64}.${sig}`, expiresAt: payload.exp };
+}
+
+async function verifyAdminSessionToken(token, secret) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return false;
+  const [payloadB64, sig] = token.split('.');
+  if (!payloadB64 || !sig) return false;
+  let expectedSig;
+  try {
+    expectedSig = await hmacSignBase64Url(payloadB64, secret);
+  } catch {
+    return false;
+  }
+  if (!constantTimeEqual(sig, expectedSig)) return false;
+  let payload;
+  try {
+    payload = decodeJsonBase64Url(payloadB64);
+  } catch {
+    return false;
+  }
+  return payload?.role === 'admin' && typeof payload.exp === 'number' && payload.exp > Date.now();
+}
+
+// ---------- Logging — nunca incluye el secreto, el token de sesión ni
+// APP_SHARED_TOKEN, solo metadatos para poder revisar consumo/errores. ----------
+function logEvent(fields) {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), ...fields }));
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-App-Token',
+    'Access-Control-Allow-Headers': 'Content-Type, X-App-Token, X-Admin-Session',
   };
 }
 
@@ -125,74 +240,146 @@ function jsonError(message, status) {
   });
 }
 
-export default {
-  async fetch(request, env) {
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders() });
-    }
-    if (request.method !== 'POST') {
-      return jsonError('Método no permitido', 405);
-    }
+async function handleAdminLogin(request, env) {
+  if (request.method !== 'POST') return jsonError('Método no permitido', 405);
+  const ip = getClientIp(request);
 
+  if (!env.ADMIN_SECRET) return jsonError('Modo administrador no configurado', 503);
+
+  const okRate = await checkRateLimit(env, `login:${ip}`, LOGIN_RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_SECONDS);
+  if (!okRate) {
+    logEvent({ role: 'admin-login', success: false, reason: 'rate_limited' });
+    return jsonError('Demasiados intentos, inténtalo más tarde', 429);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError('Cuerpo de la petición no válido', 400);
+  }
+  const password = typeof body?.password === 'string' ? body.password : '';
+
+  if (!password || !constantTimeEqual(password, env.ADMIN_SECRET)) {
+    logEvent({ role: 'admin-login', success: false, reason: 'invalid_password' });
+    return jsonError('No autorizado', 401);
+  }
+
+  const session = await createAdminSessionToken(env.ADMIN_SECRET);
+  logEvent({ role: 'admin-login', success: true });
+  return new Response(JSON.stringify({ token: session.token, expiresAt: session.expiresAt }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+  });
+}
+
+async function handleAnalyze(request, env) {
+  if (request.method !== 'POST') return jsonError('Método no permitido', 405);
+
+  const ip = getClientIp(request);
+
+  // Sesión de administrador (opcional) — si es válida, salta el rate
+  // limiting de usuarios normales, pero la petición se sigue registrando.
+  let isAdmin = false;
+  const sessionHeader = request.headers.get('X-Admin-Session');
+  if (sessionHeader && env.ADMIN_SECRET) {
+    isAdmin = await verifyAdminSessionToken(sessionHeader, env.ADMIN_SECRET);
+  }
+
+  if (!isAdmin) {
     // Cabecera compartida simple — NO es un secreto real (vive en el JS de la
     // PWA), solo frena rastreadores/bots que encuentren esta URL y quemen la
     // cuota gratuita de Gemini sin querer.
     if (env.APP_SHARED_TOKEN && request.headers.get('X-App-Token') !== env.APP_SHARED_TOKEN) {
       return jsonError('No autorizado', 401);
     }
-
-    let body;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError('Cuerpo de la petición no válido', 400);
+    const okRate = await checkRateLimit(env, `analyze:${ip}`, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SECONDS);
+    if (!okRate) {
+      logEvent({ role: 'user', success: false, reason: 'rate_limited' });
+      return jsonError('Demasiadas peticiones, inténtalo más tarde', 429);
     }
+  }
 
-    const { image, mimeType, mode } = body || {};
-    if (!image || typeof image !== 'string') return jsonError('Falta la imagen', 400);
-    if (image.length > MAX_BASE64_LENGTH) return jsonError('La imagen es demasiado grande', 413);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError('Cuerpo de la petición no válido', 400);
+  }
 
-    const model = env.GEMINI_MODEL || 'gemini-flash-latest';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+  const { image, mimeType, mode } = body || {};
+  if (!image || typeof image !== 'string') return jsonError('Falta la imagen', 400);
+  if (image.length > MAX_BASE64_LENGTH) return jsonError('La imagen es demasiado grande', 413);
 
-    const payload = {
-      contents: [{
-        role: 'user',
-        parts: [
-          { text: buildPrompt(mode) },
-          { inlineData: { mimeType: mimeType || 'image/jpeg', data: image } },
-        ],
-      }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: SCHEMA,
-      },
-    };
+  const role = isAdmin ? 'admin' : 'user';
+  const model = env.GEMINI_MODEL || 'gemini-flash-latest';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
 
-    let geminiRes;
-    try {
-      geminiRes = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } catch (err) {
-      return jsonError('No se pudo contactar con el servicio de IA', 502);
-    }
+  const payload = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: buildPrompt(mode) },
+        { inlineData: { mimeType: mimeType || 'image/jpeg', data: image } },
+      ],
+    }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: SCHEMA,
+    },
+  };
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text().catch(() => '');
-      console.error('Gemini error', geminiRes.status, errText);
-      return jsonError('El servicio de IA no pudo procesar la imagen', 502);
-    }
-
-    const data = await geminiRes.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return jsonError('Respuesta vacía de la IA', 502);
-
-    return new Response(text, {
-      status: 200,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+  let geminiRes;
+  try {
+    geminiRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     });
+  } catch (err) {
+    logEvent({ role, mode: mode || 'auto', success: false, reason: 'network_error' });
+    return jsonError('No se pudo contactar con el servicio de IA', 502);
+  }
+
+  if (!geminiRes.ok) {
+    const errText = await geminiRes.text().catch(() => '');
+    console.error('Gemini error', geminiRes.status, errText);
+    logEvent({ role, mode: mode || 'auto', success: false, reason: 'gemini_error', status: geminiRes.status });
+    return jsonError('El servicio de IA no pudo procesar la imagen', 502);
+  }
+
+  const data = await geminiRes.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    logEvent({ role, mode: mode || 'auto', success: false, reason: 'empty_response' });
+    return jsonError('Respuesta vacía de la IA', 502);
+  }
+
+  const usage = data?.usageMetadata
+    ? {
+      promptTokens: data.usageMetadata.promptTokenCount ?? null,
+      responseTokens: data.usageMetadata.candidatesTokenCount ?? null,
+      totalTokens: data.usageMetadata.totalTokenCount ?? null,
+    }
+    : null;
+  logEvent({ role, mode: mode || 'auto', success: true, usage });
+
+  return new Response(text, {
+    status: 200,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+  });
+}
+
+export default {
+  async fetch(request, env) {
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders() });
+    }
+
+    const { pathname } = new URL(request.url);
+    if (pathname === '/admin/login') {
+      return handleAdminLogin(request, env);
+    }
+    return handleAnalyze(request, env);
   },
 };

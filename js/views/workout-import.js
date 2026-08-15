@@ -16,6 +16,7 @@ import { toast } from '../core/store.js';
 import { navigate } from '../app.js';
 import { analyzeWorkoutPhoto } from '../core/ai-import.js';
 import { matchExerciseName } from '../core/exercise-match.js';
+import * as settings from '../core/settings.js';
 
 const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente' };
 
@@ -30,6 +31,18 @@ const CAPABILITIES = [
   'Supersets y técnicas especiales',
   'RIR, descansos y notas',
 ];
+
+// Debe coincidir con RATE_LIMIT_MAX_REQUESTS/RATE_LIMIT_WINDOW_SECONDS en
+// worker/index.js — informativo, no se puede consultar el límite real desde
+// aquí (el conteo vive solo en el Worker).
+const NORMAL_RATE_LIMIT_TEXT = 'Límite: 10 análisis por hora, para evitar abusos.';
+
+function rateLimitNoticeHtml() {
+  if (settings.isAdminSessionActive()) {
+    return `<p class="type-caption" style="text-align:center; margin-top:var(--space-3); color:var(--accent); font-weight:600;">● Modo administrador activo — sin límite de peticiones</p>`;
+  }
+  return `<p class="type-caption text-faint" style="text-align:center; margin-top:var(--space-3);">${NORMAL_RATE_LIMIT_TEXT}</p>`;
+}
 
 export async function renderWorkoutImport(mount) {
   renderPicker(mount);
@@ -60,6 +73,7 @@ function renderPicker(mount) {
         `).join('')}
       </div>
     </div>
+    ${rateLimitNoticeHtml()}
 
     <button class="btn btn-ghost btn-block" id="manual-instead" style="margin-top:var(--space-4);">Crear manualmente</button>
   `;
@@ -159,7 +173,8 @@ async function renderAnalyzing(mount, file, mode) {
   }, 650);
 
   try {
-    const result = await analyzeWorkoutPhoto(file, mode);
+    const adminSession = settings.isAdminSessionActive() ? settings.getAdminSession() : null;
+    const result = await analyzeWorkoutPhoto(file, mode, { adminToken: adminSession?.token });
     clearInterval(timer);
     step = ANALYZING_STEPS.length;
     pct = 100;
@@ -170,14 +185,16 @@ async function renderAnalyzing(mount, file, mode) {
   } catch (err) {
     clearInterval(timer);
     console.error(err);
-    renderError(mount, file, mode);
+    renderError(mount, file, mode, err);
   }
 }
 
-function renderError(mount, file, mode) {
+function renderError(mount, file, mode, err) {
+  const rateLimited = err?.message === 'RATE_LIMITED';
   mount.innerHTML = `
     <div class="empty-state" style="margin-top:60px;">
-      <div class="type-headline" style="margin-bottom:8px;">No hemos podido interpretar esta imagen.</div>
+      <div class="type-headline" style="margin-bottom:8px;">${rateLimited ? 'Demasiadas peticiones por ahora.' : 'No hemos podido interpretar esta imagen.'}</div>
+      ${rateLimited ? '<p class="type-caption text-faint">Espera un poco y vuelve a intentarlo.</p>' : ''}
     </div>
     <button class="btn btn-primary btn-block" id="retry" style="margin-top:var(--space-4);">Intentar de nuevo</button>
     <button class="btn btn-secondary btn-block" id="other-photo" style="margin-top:8px;">Elegir otra foto</button>
