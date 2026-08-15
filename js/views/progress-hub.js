@@ -3,7 +3,7 @@
 // plicómetro, lo que tenga datos) + una gráfica sencilla + dos accesos.
 // Nada de listas de tarjetas ni tablas — eso vive en las pestañas dedicadas.
 import * as repo from '../db/repository.js';
-import { bodyWeightStats, measurementValue, filterByPeriodGeneric } from '../core/stats.js';
+import { bodyWeightStats, measurementValue } from '../core/stats.js';
 import { formatNumber, formatDateShort } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
 import { getProgressSections, getWeightProgressUnit } from '../core/settings.js';
@@ -75,7 +75,7 @@ export async function renderProgressHub(mount) {
 function renderChart(mount, metric) {
   const canvas = mount.querySelector('#summary-chart');
   if (chartInstance) chartInstance.destroy();
-  const filtered = filterByPeriodGeneric(metric.series, '3m');
+  const filtered = metric.series; // desde el primer registro, sin recortar por periodo
   if (!filtered.length) return;
 
   const colors = getChartThemeColors();
