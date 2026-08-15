@@ -297,6 +297,9 @@ export async function addTemplateExercise(templateId, exerciseId, values = {}) {
     defaultLastSetOnly: values.defaultLastSetOnly ?? false,
     defaultRestPauseExtra: values.defaultRestPauseExtra ?? null,
     defaultDropSteps: values.defaultDropSteps ?? null,
+    // Texto original de la celda cuando la importación por IA no estaba
+    // segura (confidence baja) — ver docs/ai-import-v2-design.md.
+    rawText: values.rawText ?? null,
   };
   await db.templateExercises.add(te);
   return te;

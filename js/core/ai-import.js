@@ -9,7 +9,7 @@
 export const WORKER_URL = 'https://fitness-tracker-import.pegasush2.workers.dev';
 export const APP_SHARED_TOKEN = 'ec5ce8f09593adbab9aa8f70deda1b330ae58a91531ffa44';
 
-const SET_TYPES = ['normal', 'fallo', 'restpause', 'descendente'];
+const SET_TYPES = ['normal', 'fallo', 'restpause', 'descendente', 'amrap'];
 
 // Number(null) === 0 y Number('') === 0 — hay que descartar "ausente" ANTES
 // de convertir, o un campo que la IA dejó en null (a propósito, por no
@@ -28,50 +28,173 @@ function cleanStr(v) {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
+// Une fragmentos de nota no vacíos con " · ", sin duplicar separadores.
+function joinNotes(...parts) {
+  const clean = parts.map((p) => cleanStr(p)).filter(Boolean);
+  return clean.length ? clean.join(' · ') : null;
+}
+
+// "2'" -> 120, "1'30" -> 90, "20\"" -> 20, "2-3'" (rango) -> promedio (150),
+// "SIN DESCANSO" -> 0. Si el texto no encaja con ningún patrón conocido,
+// devuelve null (no inventa) — el texto original queda en notes de todos
+// modos, vía la nota de descanso incluida en las notas del ejercicio.
+function parseRestSecondsRaw(raw) {
+  const text = cleanStr(raw);
+  if (!text) return null;
+  const upper = text.toUpperCase();
+  if (upper.includes('SIN DESCANSO')) return 0;
+
+  // Rango tipo "2-3'" o "2' a 3'" -> promedio de los dos extremos.
+  const range = text.match(/(\d+(?:[.,]\d+)?)\s*(?:'|MIN|MINUTOS?)?\s*(?:-|A)\s*(\d+(?:[.,]\d+)?)\s*(?:'|MIN|MINUTOS?)?/i);
+  if (range) {
+    const a = parseFloat(range[1].replace(',', '.'));
+    const b = parseFloat(range[2].replace(',', '.'));
+    if (Number.isFinite(a) && Number.isFinite(b)) return Math.round(((a + b) / 2) * 60);
+  }
+  // "1'30" / "1'30''" -> minutos'segundos.
+  const minSec = text.match(/(\d+)\s*'\s*(\d+)/);
+  if (minSec) {
+    const min = parseInt(minSec[1], 10);
+    const sec = parseInt(minSec[2], 10);
+    if (Number.isFinite(min) && Number.isFinite(sec)) return min * 60 + sec;
+  }
+  // "2'" / "3 min" -> solo minutos.
+  const minOnly = text.match(/(\d+(?:[.,]\d+)?)\s*(?:'|MIN\b|MINUTOS?\b)/i);
+  if (minOnly) {
+    const min = parseFloat(minOnly[1].replace(',', '.'));
+    if (Number.isFinite(min)) return Math.round(min * 60);
+  }
+  // "20\"" / "20 seg" -> solo segundos.
+  const secOnly = text.match(/(\d+)\s*(?:"|SEG\b|SEGUNDOS?\b)/i);
+  if (secOnly) {
+    const sec = parseInt(secOnly[1], 10);
+    if (Number.isFinite(sec)) return sec;
+  }
+  return null;
+}
+
+// "RIR 0" / "RIR 1" -> número limpio. "RIR 2-0" / "1-0" (progresión) -> se
+// deja como instrucción de texto, NUNCA se reparte en números por serie.
+function parseRirRaw(raw) {
+  const text = cleanStr(raw);
+  if (!text) return { rir: null, note: null };
+  const progression = text.match(/^(?:RIR\s*)?(\d+)\s*-\s*(\d+)$/i);
+  if (progression) {
+    return { rir: null, note: `RIR progresivo ${progression[1]}→${progression[2]} a lo largo de las series` };
+  }
+  const simple = text.match(/^(?:RIR\s*)?(\d+)$/i);
+  if (simple) return { rir: parseInt(simple[1], 10), note: null };
+  return { rir: null, note: text };
+}
+
+// Núcleo de campos de "forma de la serie", compartido entre un ejercicio
+// plano y cada entrada de weekValues[] (misma limpieza en ambos casos).
+function cleanExerciseCore(e) {
+  const sets = Math.max(1, cleanInt(e?.sets) ?? 1);
+  const repsMin = cleanInt(e?.repsMin);
+  const repsMax = cleanInt(e?.repsMax) ?? repsMin;
+  // Progresión/pirámide por serie (ej. "6/8/10/12") — distinta de un rango
+  // uniforme. Una "secuencia" de un único valor no tiene sentido, se
+  // descarta (deja el rango como fuente de verdad en ese caso).
+  const repsSequenceRaw = Array.isArray(e?.repsSequence)
+    ? e.repsSequence.map((r) => cleanInt(r)).filter((r) => r != null)
+    : null;
+  const repsSequence = repsSequenceRaw && repsSequenceRaw.length > 1 ? repsSequenceRaw : null;
+  const weightSequenceRaw = Array.isArray(e?.weightSequence)
+    ? e.weightSequence.map((w) => cleanNum(w)).filter((w) => w != null)
+    : null;
+  const weightSequence = repsSequence && weightSequenceRaw && weightSequenceRaw.length === repsSequence.length ? weightSequenceRaw : null;
+  const setType = SET_TYPES.includes(e?.setType) ? e.setType : 'normal';
+  const extraReps = Array.isArray(e?.extraReps)
+    ? e.extraReps.map((r) => cleanInt(r)).filter((r) => r != null)
+    : null;
+  const steps = Array.isArray(e?.steps)
+    ? e.steps.map((s) => ({ weight: cleanNum(s?.weight), reps: cleanInt(s?.reps) })).filter((s) => s.weight != null || s.reps != null)
+    : null;
+  return {
+    sets, repsMin, repsMax, repsSequence, weightSequence, setType,
+    lastSetOnly: e?.lastSetOnly === true,
+    extraReps: extraReps?.length ? extraReps : null,
+    steps: steps?.length ? steps : null,
+    weightHintKg: cleanNum(e?.weightHintKg),
+  };
+}
+
+// ¿Esta entrada de weekValues[] trae algo real, o está vacía/es solo un
+// hueco de fecha para rellenar a mano? (ver Caso "cuaderno de registro").
+function weekValueHasData(wv) {
+  return wv?.sets > 0 || wv?.repsMin > 0 || wv?.repsMax > 0
+    || (Array.isArray(wv?.repsSequence) && wv.repsSequence.length > 0)
+    || wv?.setType === 'amrap' || !!cleanStr(wv?.rawText);
+}
+
+function weekValueScore(core) {
+  const reps = core.repsMax ?? core.repsMin ?? (core.repsSequence ? Math.max(...core.repsSequence) : 0) ?? 0;
+  return core.sets * reps;
+}
+
+// Regla de §2 de docs/ai-import-v2-design.md: por defecto la ÚLTIMA semana;
+// si esa celda está vacía/incompleta para este ejercicio, respaldo en la
+// semana con más volumen (series × reps) de las que sí tengan datos.
+function resolveWeekValues(weekValuesRaw) {
+  const list = Array.isArray(weekValuesRaw) ? weekValuesRaw.filter((wv) => wv && typeof wv === 'object') : [];
+  if (!list.length) return null;
+  const last = list[list.length - 1];
+  if (weekValueHasData(last)) return { chosen: last, usedFallback: false };
+  const withData = list.filter(weekValueHasData);
+  if (!withData.length) return { chosen: last, usedFallback: false };
+  const scored = withData.map((wv) => ({ wv, score: weekValueScore(cleanExerciseCore(wv)) }));
+  const best = scored.reduce((a, b) => (b.score > a.score ? b : a)).wv;
+  return { chosen: best, usedFallback: true };
+}
+
 // Nunca lanza sobre datos "basura" de un campo suelto — cada campo se limpia
 // o se descarta por separado. Solo lanza si la respuesta ni siquiera es un
 // objeto reconocible (eso sí debe mostrarse como fallo del análisis).
 function validateExercises(exercisesRaw) {
   const list = Array.isArray(exercisesRaw) ? exercisesRaw : [];
   return list.map((e) => {
-    const sets = Math.max(1, cleanInt(e?.sets) ?? 1);
-    const repsMin = cleanInt(e?.repsMin);
-    const repsMax = cleanInt(e?.repsMax) ?? repsMin;
-    // Progresión/pirámide por serie (ej. "6/8/10/12") — distinta de un rango
-    // uniforme. Una "secuencia" de un único valor no tiene sentido, se
-    // descarta (deja el rango como fuente de verdad en ese caso).
-    const repsSequenceRaw = Array.isArray(e?.repsSequence)
-      ? e.repsSequence.map((r) => cleanInt(r)).filter((r) => r != null)
+    const resolved = resolveWeekValues(e?.weekValues);
+    // Fuente de los campos "de forma de la serie": la semana elegida si el
+    // documento tenía columnas de semana, o el propio ejercicio si no.
+    const source = resolved ? resolved.chosen : e;
+    const core = cleanExerciseCore(source);
+
+    // La IA puede poner un RIR simple directamente en "rir" (regla original),
+    // o un texto en "rirRaw" cuando es una progresión ("RIR 2-0") — "rir"
+    // directo siempre gana si ambos vinieran informados.
+    const { rir: rirFromRaw, note: rirNote } = parseRirRaw(source?.rirRaw);
+    const rir = cleanInt(source?.rir) ?? rirFromRaw;
+    const restSeconds = parseRestSecondsRaw(source?.restSecondsRaw);
+    const restNote = source?.restSecondsRaw && restSeconds == null ? `Descanso: ${cleanStr(source.restSecondsRaw)}` : null;
+    const tutNote = cleanStr(source?.tut) ? `TUT: ${cleanStr(source.tut)}` : null;
+    const equipmentNote = cleanStr(source?.equipmentHint) ? `Material: ${cleanStr(source.equipmentHint)}` : null;
+    const fallbackNote = resolved?.usedFallback && resolved.chosen?.weekLabel
+      ? `Semana final sin datos para este ejercicio — se usó ${cleanStr(resolved.chosen.weekLabel) ?? 'otra semana'} por tener más series/reps`
       : null;
-    const repsSequence = repsSequenceRaw && repsSequenceRaw.length > 1 ? repsSequenceRaw : null;
-    const weightSequenceRaw = Array.isArray(e?.weightSequence)
-      ? e.weightSequence.map((w) => cleanNum(w)).filter((w) => w != null)
-      : null;
-    const weightSequence = repsSequence && weightSequenceRaw && weightSequenceRaw.length === repsSequence.length ? weightSequenceRaw : null;
-    const setType = SET_TYPES.includes(e?.setType) ? e.setType : 'normal';
-    const extraReps = Array.isArray(e?.extraReps)
-      ? e.extraReps.map((r) => cleanInt(r)).filter((r) => r != null)
-      : null;
-    const steps = Array.isArray(e?.steps)
-      ? e.steps.map((s) => ({ weight: cleanNum(s?.weight), reps: cleanInt(s?.reps) })).filter((s) => s.weight != null || s.reps != null)
-      : null;
+
+    const rawText = cleanStr(source?.rawText);
+    const hasUncertainSignal = !!rawText || !!fallbackNote || (source?.confidence === 'low');
+
     return {
       recognizedName: cleanStr(e?.recognizedName) ?? 'Ejercicio sin nombre',
-      sets,
-      repsMin,
-      repsMax,
-      repsSequence,
-      weightSequence,
-      rir: cleanInt(e?.rir),
-      setType,
-      lastSetOnly: e?.lastSetOnly === true,
-      extraReps: extraReps?.length ? extraReps : null,
-      steps: steps?.length ? steps : null,
+      sets: core.sets,
+      repsMin: core.repsMin,
+      repsMax: core.repsMax,
+      repsSequence: core.repsSequence,
+      weightSequence: core.weightSequence,
+      rir,
+      targetRestSeconds: restSeconds,
+      setType: core.setType,
+      lastSetOnly: core.lastSetOnly,
+      extraReps: core.extraReps,
+      steps: core.steps,
       supersetGroup: cleanStr(e?.supersetGroup),
       supersetOrder: cleanInt(e?.supersetOrder),
-      weightHintKg: cleanNum(e?.weightHintKg),
-      notes: cleanStr(e?.notes),
-      confidence: e?.confidence === 'low' ? 'low' : 'high',
+      weightHintKg: core.weightHintKg,
+      notes: joinNotes(source?.notes, tutNote, equipmentNote, rirNote, restNote, fallbackNote),
+      confidence: hasUncertainSignal ? 'low' : 'high',
+      rawText,
     };
   });
 }

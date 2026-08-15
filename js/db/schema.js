@@ -278,7 +278,31 @@ db.version(10).stores({
   });
 });
 
-export const SCHEMA_VERSION = 10;
+// v11: texto original de la celda cuando la importación por IA marca un
+// ejercicio con confidence baja (ver docs/ai-import-v2-design.md). Permite
+// revisar contra la fuente en vez de corregir "a ciegas". null en todo lo
+// existente = comportamiento actual intacto.
+db.version(11).stores({
+  exercises: 'id, name, muscleGroup, archived, isFavorite',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+}).upgrade(async (tx) => {
+  await tx.table('templateExercises').toCollection().modify((te) => {
+    if (te.rawText === undefined) te.rawText = null;
+  });
+});
+
+export const SCHEMA_VERSION = 11;
 
 export function newId() {
   return crypto.randomUUID();

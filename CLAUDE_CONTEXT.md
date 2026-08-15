@@ -143,7 +143,7 @@ lo requiere para un Worker de un solo archivo sin dependencias npm).
 ## 5. Modelo de datos actual
 
 Basado en [js/db/schema.js](js/db/schema.js). Versión de esquema actual:
-**`SCHEMA_VERSION = 10`**. Todas las migraciones (v1→v10) son **aditivas y
+**`SCHEMA_VERSION = 11`**. Todas las migraciones (v1→v11) son **aditivas y
 no destructivas**: nunca se elimina ni se transforma con pérdida de datos
 existentes; los campos nuevos siempre reciben un valor por defecto seguro
 mediante `.upgrade()`.
@@ -170,7 +170,10 @@ Tablas (stores) actuales:
   `description`.
 - **`templateExercises`** — ejercicios dentro de una plantilla. Incluye
   (desde v9) `targetRepsSequence` / `targetWeightSequence`, igual que
-  `workoutExercises`.
+  `workoutExercises`; y (desde v11) `rawText` — texto original de la celda
+  cuando la importación por IA marca el ejercicio con confidence baja (ver
+  §10 y `docs/ai-import-v2-design.md`). También ya existían `targetRir` y
+  `targetRestSeconds` (RIR y descanso objetivo, en segundos) desde antes.
 - **`bars`** — configuraciones de barra libre (peso de barra + discos por
   lado), añadida en schema v8.
 
@@ -336,6 +339,44 @@ Cliente: [js/core/ai-import.js](js/core/ai-import.js).
   4 días de rutina real (`REGRESSION_FIXTURE_4DAY` en el propio archivo,
   función `mockRegressionFixture4Day()`), probada end-to-end a través de la
   UI real y la base de datos.
+- **Interpretación V2 (programas con semanas, AMRAP, RIR progresivo, TUT,
+  descanso, técnicas no soportadas)** — implementada según
+  `docs/ai-import-v2-design.md`, verificada end-to-end con datos sintéticos
+  y con una sesión real creada desde una plantilla importada:
+  - `setType` ahora incluye `"amrap"` (además de
+    normal/fallo/restpause/descendente), soportado también en el editor
+    manual de rutinas (`templates.js`) y en la sesión en vivo
+    (`workout-session.js`), no solo en la importación.
+  - **RIR**: un valor simple (`"RIR 0"`) va al campo numérico `rir` de
+    siempre; una progresión (`"RIR 2-0"`, dos números con guion) NUNCA se
+    reparte en números inventados por serie — se guarda como instrucción
+    de texto en `notes` (`parseRirRaw` en `ai-import.js`).
+  - **Descanso**: la IA solo extrae el texto tal cual (`restSecondsRaw`);
+    la conversión a segundos es **determinista, en el código**, no en el
+    modelo (`parseRestSecondsRaw`) — reconoce `"2'"`, `"1'30"`, `"20\""`,
+    rangos tipo `"2-3'"` (usa el promedio) y `"SIN DESCANSO"` (0s). Si el
+    texto no encaja con ningún patrón, se deja como nota legible en vez de
+    inventar un número.
+  - **Programas con semanas** ("SEMANA 1/2/3/4..."): la IA NO genera una
+    plantilla por semana — cada ejercicio trae `weekValues[]` (una entrada
+    por columna de semana) y el código elige un único valor final por
+    ejercicio: por defecto la **última semana**; si esa celda está vacía o
+    incompleta, usa como respaldo la semana con más series/reps de las que
+    sí tengan datos (`resolveWeekValues` en `ai-import.js`), marcando
+    `confidence:"low"` y explicando en `notes` qué semana se usó en su
+    lugar. El resultado sigue siendo **una única rutina por día importado**,
+    nunca varias plantillas por el mismo día.
+  - **Técnicas no soportadas** (ej. "PARCIALES") o celdas ambiguas: se
+    guardan como `setType:"normal"` + `confidence:"low"` + el texto
+    original en el nuevo campo `rawText`, visible en la UI de revisión
+    (`workout-import.js`) junto al aviso "Revisar — lectura poco segura",
+    para que el usuario compare contra la fuente en vez de corregir a
+    ciegas.
+  - Ver `docs/ai-import-v2-design.md` para el catálogo completo de casos
+    (basado en documentos reales de programas de 4-8 semanas) y qué queda
+    explícitamente fuera de esta V1 (modelo de "programa" enlazado con
+    progresión automática, % de 1RM como campo propio, resolución de
+    referencias cruzadas tipo "ídem día anterior").
 - **Fallback simulado**: si `WORKER_URL` estuviera vacío, la app usaría
   mocks (`mockAnalyzeProgramPhoto`) para poder probar el flujo sin
   depender del Worker desplegado. Actualmente `WORKER_URL` SÍ está
@@ -379,6 +420,16 @@ al sitio de GitHub Pages.
   básico, no un sistema de auth real (ver nota de seguridad en §10).
 - **Entrada esperada**: `{ image (base64), mimeType, mode }`, límite de
   tamaño `MAX_BASE64_LENGTH = 8_000_000` (~6MB de imagen real).
+- **Prompt y schema extendidos** (ver `docs/ai-import-v2-design.md`): además
+  de las reglas originales de rango/secuencia/fallo/rest-pause/drop-set/
+  superserie simple, el prompt ahora cubre AMRAP, RIR progresivo, TUT,
+  descanso (como texto, la conversión a segundos la hace el cliente),
+  superseries nombradas dentro del propio nombre del ejercicio ("SS SET X +
+  Y"), variantes de equipamiento por semana, y detección de columnas
+  "SEMANA N" (`weekValues[]` por ejercicio). `EXERCISE_SCHEMA` añadió
+  `restSecondsRaw`, `rirRaw`, `tut`, `equipmentHint`, `rawText`,
+  `weekValues` (con su propio `WEEK_VALUE_SCHEMA`), y `"amrap"` al enum de
+  `setType`.
 - **Rate limiting (usuarios normales)**: contador por IP y ventana de 1
   hora en un namespace de KV (`env.RATE_LIMIT_KV`, binding a configurar en
   `wrangler.toml`), 10 peticiones/hora por defecto para el endpoint de
@@ -545,7 +596,17 @@ exclusivo de los badges de estado tipo `.progress-callout`).
 Según `git log --oneline` (commits más recientes primero):
 
 > **Cambio más reciente (sin commitear todavía en el momento de escribir
-> esto)**: **Modo administrador para el Worker de IA** — rate limiting por
+> esto)**: **Rediseño de la interpretación de la importación por IA**
+> (`docs/ai-import-v2-design.md`) — soporte para programas con semanas
+> (resueltos a una única rutina por ejercicio, no una plantilla por
+> semana), AMRAP como tipo de serie de pleno derecho, RIR progresivo como
+> instrucción de texto (nunca repartido en números inventados), descanso
+> convertido de forma determinista a segundos en el código (nunca por la
+> IA), y un campo `rawText` (schema v11) para ver el texto original de
+> cualquier ejercicio marcado como "revisar". Basado en la lectura completa
+> de 8 documentos reales de programas de 4-8 semanas.
+
+> **Cambio anterior**: **Modo administrador para el Worker de IA** — rate limiting por
 > IP (KV, fail-open si el namespace no existe), ruta `/admin/login` con
 > sesión HMAC de 12h firmada con `ADMIN_SECRET` (revocable rotando ese
 > secreto, sin tocar la PWA), logging de cada petición

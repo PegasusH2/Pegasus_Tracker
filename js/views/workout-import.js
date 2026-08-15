@@ -18,7 +18,7 @@ import { analyzeWorkoutPhoto } from '../core/ai-import.js';
 import { matchExerciseName } from '../core/exercise-match.js';
 import * as settings from '../core/settings.js';
 
-const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente' };
+const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente', amrap: 'AMRAP' };
 
 function uid(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2)}`;
@@ -491,6 +491,7 @@ function paintRoutineEditor(mount, programState, routine, file, mode) {
           repsSequence: null,
           weightSequence: null,
           rir: null,
+          targetRestSeconds: null,
           setType: 'normal',
           lastSetOnly: false,
           extraReps: null,
@@ -500,6 +501,7 @@ function paintRoutineEditor(mount, programState, routine, file, mode) {
           weightHintKg: null,
           notes: null,
           confidence: 'high',
+          rawText: null,
         });
         rerender();
       },
@@ -515,7 +517,10 @@ function renderExerciseEditList(listEl, routine, onChange, onSplit) {
           <div class="type-body" style="font-weight:700;">
             ${it.supersetGroup ? `<span class="text-faint">${escapeHtml(it.supersetGroup)}${it.supersetOrder ?? ''} · </span>` : ''}${escapeHtml(it.recognizedName)}
           </div>
-          ${it.confidence === 'low' ? `<div class="type-caption" style="color:var(--warn);">Revisar — lectura poco segura</div>` : ''}
+          ${it.confidence === 'low' ? `
+            <div class="type-caption" style="color:var(--warn);">Revisar — lectura poco segura</div>
+            ${it.rawText ? `<div class="type-caption text-faint">Texto original: "${escapeHtml(it.rawText)}"</div>` : ''}
+          ` : ''}
           ${it.matchedExercise
       ? `<div class="type-caption text-faint">Coincide con: ${escapeHtml(it.matchedExercise.name)} <button type="button" class="ex-change-match" style="color:var(--accent); font-weight:600;">Cambiar</button></div>`
       : `<div class="type-caption" style="color:var(--warn);">Ejercicio no encontrado <button type="button" class="ex-resolve-match" style="color:var(--accent); font-weight:600;">Resolver</button></div>`}
@@ -636,7 +641,7 @@ function openMatchPicker(item, onChange) {
 }
 
 function openTypeChoiceSheet(current, onSelect) {
-  const options = ['normal', 'fallo', 'restpause', 'descendente'];
+  const options = ['normal', 'fallo', 'restpause', 'descendente', 'amrap'];
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:12px;">Tipo de serie</h3>
     <div class="grouped-list">
@@ -682,9 +687,13 @@ async function saveProgram(programState) {
         targetRepsSequence: item.repsSequence,
         targetWeightSequence: item.weightSequence,
         targetRir: item.rir,
+        targetRestSeconds: item.targetRestSeconds ?? null,
         notes: item.notes || '',
         defaultSetType: usesSpecialType ? item.setType : 'normal',
         defaultLastSetOnly: usesSpecialType && item.lastSetOnly,
+        defaultRestPauseExtra: usesSpecialType && item.setType === 'restpause' ? item.extraReps : null,
+        defaultDropSteps: usesSpecialType && item.setType === 'descendente' ? item.steps : null,
+        rawText: item.rawText ?? null,
       });
     }
   }

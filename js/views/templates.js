@@ -93,7 +93,7 @@ function renderExerciseList(mount, template, exercises) {
   });
 }
 
-const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente' };
+const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente', amrap: 'AMRAP' };
 
 function targetSummary(te) {
   const parts = [`${te.targetSets} serie${te.targetSets === 1 ? '' : 's'}`];
@@ -205,7 +205,7 @@ function openTemplateExerciseForm(mount, template, { te, exercise, isNew }) {
 }
 
 function openTypeChoiceSheet(current, onSelect) {
-  const options = ['normal', 'fallo', 'restpause', 'descendente'];
+  const options = ['normal', 'fallo', 'restpause', 'descendente', 'amrap'];
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:12px;">Tipo de serie</h3>
     <div class="grouped-list">

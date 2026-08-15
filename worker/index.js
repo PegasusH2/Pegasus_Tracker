@@ -39,6 +39,22 @@ Reglas estrictas:
 - Un comentario GENERAL que no pertenece a un ejercicio concreto (ej. una nota al pie sobre técnica/respiración que menciona varios ejercicios de varios días, un recordatorio general de la rutina) va en "routineDescription" de la rutina — si ese comentario aplica visualmente a varias rutinas/días a la vez, repítelo en el campo "routineDescription" de cada una de esas rutinas. No lo metas como ejercicio ni lo pierdas en "unrecognized".
 - confidence="low" en cualquier ejercicio cuya lectura te genere dudas razonables; "high" en el resto.
 - Cualquier línea de texto que no puedas interpretar como ejercicio NI como comentario general, ponla en "unrecognized" DE LA RUTINA a la que pertenezca, no la fuerces dentro de "exercises".
+
+Reglas adicionales (documentos de entrenamiento más avanzados — planes con semanas, RIR, TUT, AMRAP...):
+
+- AMRAP: la palabra "AMRAP" sola (sin ningún número junto a ella) -> setType="amrap". Deja repsMin/repsMax/repsSequence en null — NUNCA inventes un número de repeticiones para un AMRAP.
+- RIR: si ves "RIR 0", "RIR 1", "@2 RIR", "2 RIR" (UN SOLO número, sin guion) -> campo "rir" numérico normal. Si en cambio ves una PROGRESIÓN como "RIR 2-0" o "RIR 1-0" (dos números separados por guion), NO es el RIR literal de cada serie — significa que el RIR baja progresivamente a lo largo de las series (de más margen a menos, acercándose al fallo en las últimas). En ese caso deja "rir" en null y pon el texto EXACTO ("RIR 2-0") en "rirRaw" — el código de la aplicación decide qué hacer con ese texto, tú nunca lo repartas en números inventados por serie. Si ves "FALLO TOTAL" como si fuera un valor de RIR (encabezado de columna), trátalo como si fuera setType="fallo" para ese bloque, no como texto de RIR.
+- TUT (Time Under Tension): "TUT CONTROLADO", "TUT 1212", "TUT 0313" son SIEMPRE instrucción de técnica, nunca repeticiones ni series. Ponlos tal cual en el campo "tut" (ej. "1212", "CONTROLADO") — nunca los confundas con un número de reps.
+- Descanso: cualquier duración de descanso entre series o ejercicios ("DESCANSO 2'", "DESCANSO 1'30\"", "3 min", "SIN DESCANSO", "DESCANSO 2-3'") va tal cual, como texto, en "restSecondsRaw" — NO hagas tú la conversión a segundos, el código se encarga de esa aritmética de forma determinista. Copia el texto exactamente como aparece, incluyendo símbolos (', ", rangos con guion).
+- Combinación de porcentaje de 1RM con descanso interno tipo cluster (ej. "75%6/50seg/60%8" = 6 reps al 75% de 1RM, 50s de descanso interno, luego 8 reps al 60%): trátalo como rest-pause -> setType="restpause", pon el segundo bloque de reps en extraReps=[8], y copia la celda completa tal cual en "notes" (los porcentajes de 1RM no tienen campo propio en la aplicación, así que deben quedar visibles como texto). Marca confidence="low" siempre que la celda contenga un símbolo "%", porque la aplicación no puede aplicar ese porcentaje automáticamente.
+- Técnicas no reconocidas: PEGASUS solo soporta estos tipos de serie: normal, fallo, restpause, descendente, amrap. Si el documento usa una técnica DISTINTA de estas (ej. "PARCIALES", "isométrico", o cualquier palabra que no reconozcas como una de las anteriores), NO inventes un tipo nuevo — usa setType="normal", copia la celda completa en "rawText", y pon confidence="low" para que el usuario la revise y la reetiquete él mismo.
+- Referencias cruzadas a otro día ("Idem, día anterior", "igual que el lunes"): nunca intentes resolver a qué ejercicio se refiere exactamente. Pon confidence="low" y copia la frase exacta en "rawText".
+- Variantes de equipamiento (ej. "multipower" en una columna/semana y "mancuernas" en otra, para el mismo ejercicio): copia el equipamiento indicado para el bloque que estés leyendo en "equipmentHint" (texto tal cual, ej. "multipower").
+- Ejercicio con dos bloques de series en el mismo día (ej. "Press Militar" aparece dos veces, una con un esquema y otra con otro): son bloques DISTINTOS, no los fusiones — genera dos elementos de "exercises" independientes, en el orden en que aparecen en el documento.
+- Superserie nombrada dentro del propio nombre del ejercicio (ej. "SS SET DEAD FRANCÉS + REMO MANCUERNA", "SS SET GEMELO / RUEDA ABDOMINAL"): detecta que son DOS ejercicios distintos combinados en una superserie — genera dos elementos de "exercises" con el mismo "supersetGroup" y "supersetOrder" correlativo (1, 2), usando el nombre de cada ejercicio por separado (ej. "Dead francés" y "Remo mancuerna"), no el texto completo de la celda como si fuera un solo ejercicio.
+- Celdas vacías o con placeholders sin datos reales (ej. una celda con solo comas ",,,,", o en blanco): no inventes un número — deja los campos de repeticiones en null y confidence="low".
+
+PROGRAMAS CON SEMANAS — si el documento tiene columnas o bloques literalmente titulados "SEMANA 1", "SEMANA 2"... (o "SEMANA 1 y 5", etc.), TODO el contenido de esas columnas para un mismo ejercicio va en "weekValues": una entrada por columna de semana, en el mismo orden en que aparecen, cada una con "weekLabel" (el texto exacto de la cabecera, ej. "Semana 1 y 5") y el resto de campos del ejercicio para ESA semana concreta (sets, repsMin/Max, repsSequence, setType, restSecondsRaw, rirRaw, tut, equipmentHint, notes, rawText...). Cuando uses "weekValues", deja los campos planos del ejercicio (sets, repsMin, repsMax, setType, etc. a nivel superior) en null — el código de la aplicación decide qué semana usar. IMPORTANTE: si esas columnas de semana están vacías o solo contienen una plantilla de fecha para que el usuario la rellene a mano (ej. "   /   /"), sin ningún número de series/reps, entonces NO es una prescripción distinta por semana — es un cuaderno de registro, y debes tratar el ejercicio con sus campos planos normales (sin "weekValues"), exactamente igual que un documento sin semanas.
 - Responde SOLO con el JSON pedido, en el mismo idioma en que esté escrita la rutina (normalmente español).`;
 
 // La imagen puede contener una única rutina o un programa completo con varias
@@ -64,17 +80,19 @@ function buildPrompt(mode) {
   return BASE_PROMPT + (MODE_INSTRUCTIONS[mode] || MODE_INSTRUCTIONS.auto);
 }
 
-const EXERCISE_SCHEMA = {
+// Subconjunto de campos de un ejercicio válidos DENTRO de una semana
+// concreta (ver "weekValues" en EXERCISE_SCHEMA) — sin recognizedName,
+// confidence, supersetGroup/Order ni weekValues (no hay semanas de semanas).
+const WEEK_VALUE_SCHEMA = {
   type: 'OBJECT',
   properties: {
-    recognizedName: { type: 'STRING' },
-    sets: { type: 'INTEGER' },
+    weekLabel: { type: 'STRING', nullable: true },
+    sets: { type: 'INTEGER', nullable: true },
     repsMin: { type: 'INTEGER', nullable: true },
     repsMax: { type: 'INTEGER', nullable: true },
     repsSequence: { type: 'ARRAY', items: { type: 'INTEGER' }, nullable: true },
     weightSequence: { type: 'ARRAY', items: { type: 'NUMBER' }, nullable: true },
-    rir: { type: 'INTEGER', nullable: true },
-    setType: { type: 'STRING', enum: ['normal', 'fallo', 'restpause', 'descendente'] },
+    setType: { type: 'STRING', enum: ['normal', 'fallo', 'restpause', 'descendente', 'amrap'], nullable: true },
     lastSetOnly: { type: 'BOOLEAN', nullable: true },
     extraReps: { type: 'ARRAY', items: { type: 'INTEGER' }, nullable: true },
     steps: {
@@ -88,13 +106,56 @@ const EXERCISE_SCHEMA = {
         },
       },
     },
+    restSecondsRaw: { type: 'STRING', nullable: true },
+    rirRaw: { type: 'STRING', nullable: true },
+    tut: { type: 'STRING', nullable: true },
+    equipmentHint: { type: 'STRING', nullable: true },
+    weightHintKg: { type: 'NUMBER', nullable: true },
+    notes: { type: 'STRING', nullable: true },
+    rawText: { type: 'STRING', nullable: true },
+  },
+};
+
+const EXERCISE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    recognizedName: { type: 'STRING' },
+    sets: { type: 'INTEGER', nullable: true },
+    repsMin: { type: 'INTEGER', nullable: true },
+    repsMax: { type: 'INTEGER', nullable: true },
+    repsSequence: { type: 'ARRAY', items: { type: 'INTEGER' }, nullable: true },
+    weightSequence: { type: 'ARRAY', items: { type: 'NUMBER' }, nullable: true },
+    rir: { type: 'INTEGER', nullable: true },
+    setType: { type: 'STRING', enum: ['normal', 'fallo', 'restpause', 'descendente', 'amrap'] },
+    lastSetOnly: { type: 'BOOLEAN', nullable: true },
+    extraReps: { type: 'ARRAY', items: { type: 'INTEGER' }, nullable: true },
+    steps: {
+      type: 'ARRAY',
+      nullable: true,
+      items: {
+        type: 'OBJECT',
+        properties: {
+          weight: { type: 'NUMBER', nullable: true },
+          reps: { type: 'INTEGER', nullable: true },
+        },
+      },
+    },
+    restSecondsRaw: { type: 'STRING', nullable: true },
+    rirRaw: { type: 'STRING', nullable: true },
+    tut: { type: 'STRING', nullable: true },
+    equipmentHint: { type: 'STRING', nullable: true },
     supersetGroup: { type: 'STRING', nullable: true },
     supersetOrder: { type: 'INTEGER', nullable: true },
     weightHintKg: { type: 'NUMBER', nullable: true },
     notes: { type: 'STRING', nullable: true },
     confidence: { type: 'STRING', enum: ['high', 'low'] },
+    rawText: { type: 'STRING', nullable: true },
+    // Solo si el documento tiene columnas "SEMANA N" — una entrada por
+    // columna; si existe y no está vacía, los campos planos de arriba
+    // (sets, repsMin...) deben dejarse en null (ver regla del prompt).
+    weekValues: { type: 'ARRAY', items: WEEK_VALUE_SCHEMA, nullable: true },
   },
-  required: ['recognizedName', 'sets', 'setType', 'confidence'],
+  required: ['recognizedName', 'setType', 'confidence'],
 };
 
 const SCHEMA = {
