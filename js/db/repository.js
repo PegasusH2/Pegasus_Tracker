@@ -451,9 +451,13 @@ export async function getExerciseHistory(exerciseId, { excludeWorkoutId, since }
   return entries;
 }
 
+// La entrada más reciente por fecha puede ser una sesión empezada y nunca
+// rellenada (todas las series en blanco) — eso no cuenta como "última vez que
+// lo hice" a efectos de comparación/prellenado, así que se ignora y se sigue
+// buscando hacia atrás hasta encontrar una con algún dato real.
 export async function getLastSessionForExercise(exerciseId, { excludeWorkoutId } = {}) {
   const history = await getExerciseHistory(exerciseId, { excludeWorkoutId });
-  return history[0] ?? null;
+  return history.find((entry) => entry.sets.some((s) => s.weight != null || s.reps != null)) ?? null;
 }
 
 // ---------- Peso corporal ----------
