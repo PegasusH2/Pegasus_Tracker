@@ -579,7 +579,7 @@ const TABLES = [
   'exercises', 'workouts', 'workoutExercises', 'sets',
   'bodyWeight', 'measurementTypes', 'measurements',
   'skinfoldSites', 'skinfoldEntries', 'settings',
-  'templates', 'templateExercises',
+  'templates', 'templateExercises', 'bars',
 ];
 
 export async function exportAllData() {
