@@ -4,7 +4,8 @@ import { renderExerciseDetail } from './views/exercise-detail.js';
 import { renderWorkoutNew } from './views/workout-new.js';
 import { renderWorkoutImport } from './views/workout-import.js';
 import { renderWorkoutSession } from './views/workout-session.js';
-import { renderWorkoutHistory } from './views/workout-history.js';
+import { renderWorkoutHistory, renderAllRoutines } from './views/workout-history.js';
+import { renderRoutineWizard } from './views/routine-wizard.js';
 import { renderTemplateDetail } from './views/templates.js';
 import { renderProgressHub } from './views/progress-hub.js';
 import { renderBodyWeight } from './views/bodyweight.js';
@@ -15,7 +16,7 @@ import { renderSettingsBackup } from './views/settings-backup.js';
 import { renderSettingsHub } from './views/settings-hub.js';
 import { hasExistingUserData, runOnboarding } from './views/onboarding.js';
 import { NAV_ICONS } from './core/ui.js';
-import { on } from './core/store.js';
+import { on, toast } from './core/store.js';
 import * as settings from './core/settings.js';
 
 const ALL_TABS = [
@@ -59,6 +60,8 @@ function matchRoute(segments) {
   if (root === 'entreno') {
     if (!sub) return { view: renderWorkoutHistory, tab: 'entreno', subtab: 'entrenamientos' };
     if (sub === 'ejercicios') return { view: renderExerciseLibrary, tab: 'entreno', subtab: 'ejercicios' };
+    if (sub === 'rutinas') return { view: renderAllRoutines, tab: 'entreno', subtab: 'entrenamientos' };
+    if (sub === 'rutina-nueva') return { view: renderRoutineWizard, tab: 'entreno', subtab: null, focusMode: true };
     if (sub === 'nuevo') return { view: renderWorkoutNew, tab: 'entreno', subtab: 'entrenamientos', params: { presetDate: param || null } };
     if (sub === 'importar-foto') return { view: renderWorkoutImport, tab: 'entreno', subtab: 'entrenamientos' };
     if (sub === 'sesion' && param) return { view: renderWorkoutSession, tab: 'entreno', subtab: null, focusMode: true, params: { workoutId: param } };
@@ -106,14 +109,41 @@ function renderShell() {
 
 let currentTab = null;
 
+// Modo desarrollador oculto — 5 toques seguidos (en menos de 2s entre uno y
+// el siguiente) sobre el icono de Ajustes de la barra inferior lo
+// desbloquea permanentemente. El contador vive aquí porque el icono de
+// Ajustes puede tocarse repetidamente sin cambiar de hash (ya estando en
+// /ajustes), así que no siempre se vuelve a montar renderBottomNav entre
+// toque y toque.
+const DEV_UNLOCK_TAPS = 5;
+const DEV_UNLOCK_WINDOW_MS = 2000;
+let devTapCount = 0;
+let devTapTimer = null;
+
+function handleSettingsIconTap() {
+  if (settings.isDevModeUnlocked()) return;
+  clearTimeout(devTapTimer);
+  devTapCount++;
+  if (devTapCount >= DEV_UNLOCK_TAPS) {
+    devTapCount = 0;
+    settings.unlockDevMode().then(() => toast('Modo desarrollador desbloqueado'));
+    return;
+  }
+  devTapTimer = setTimeout(() => { devTapCount = 0; }, DEV_UNLOCK_WINDOW_MS);
+}
+
 function renderBottomNav(activeTab) {
   currentTab = activeTab;
   const nav = document.getElementById('bottom-nav');
   nav.innerHTML = visibleTabs().map((tab) => `
     <a class="nav-item ${tab.key === activeTab ? 'active' : ''}" href="#${tab.path}" aria-label="${tab.label}" title="${tab.label}">
       <span class="nav-icon">${tab.icon}</span>
+      <span class="nav-dot"></span>
     </a>
   `).join('');
+
+  const ajustesLink = nav.querySelector('a[href="#/ajustes"]');
+  ajustesLink?.addEventListener('click', handleSettingsIconTap);
 }
 
 on('prefs:changed', ({ key }) => {

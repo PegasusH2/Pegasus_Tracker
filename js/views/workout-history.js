@@ -1,108 +1,183 @@
 import * as repo from '../db/repository.js';
 import * as settings from '../core/settings.js';
 import { escapeHtml } from '../core/escape.js';
-import { openSheet, TEMPLATE_ICONS, templateIconHtml } from '../core/ui.js';
-import { toast } from '../core/store.js';
+import { relativeDays } from '../core/format.js';
+import { templateIconHtml, ACTION_ICONS } from '../core/ui.js';
 import { renderWorkoutCalendar } from './workout-calendar.js';
 import { navigate } from '../app.js';
 
 export async function renderWorkoutHistory(mount) {
   const templates = await repo.listTemplates();
+  const templatesWithMeta = await loadTemplatesMeta(templates);
 
   mount.innerHTML = `
-    <div id="templates-section" style="margin-bottom:var(--space-5);"></div>
+    <div id="actions-section" style="margin-bottom:var(--space-5);"></div>
+    <div id="my-routines-section" style="margin-bottom:var(--space-5);"></div>
 
-    <div class="section-label">Tus entrenos</div>
-    <div id="w-calendar"></div>
+    <div class="section-divider"></div>
+
+    <div class="section-label-row">
+      <span class="section-label-icon">${ACTION_ICONS.calendar}</span>
+      <span class="section-label" style="margin-bottom:0;">Tus entrenos</span>
+    </div>
+    <div class="card" id="w-calendar"></div>
   `;
 
-  renderTemplatesSection(mount, templates);
+  renderActionsSection(mount);
+  renderMyRoutinesSection(mount, templatesWithMeta);
 
   await renderWorkoutCalendar(mount.querySelector('#w-calendar'));
 }
 
-// Con rutinas ya creadas, todo este bloque (rejilla + accesos rápidos para
-// crear un entreno) se colapsa por defecto — ya no aporta tanto verlo entero
-// cada vez que abres Entreno. El usuario puede expandir/colapsar a mano y esa
-// elección se recuerda (settings.js).
-function renderTemplatesSection(mount, templates) {
-  const stored = settings.getTemplatesGridCollapsed();
-  const collapsed = stored ?? templates.length > 0;
+function collapseChevronHtml(collapsed) {
+  return `<span style="display:flex; transform:rotate(${collapsed ? '0' : '180'}deg); transition:transform 160ms var(--ease);">${ACTION_ICONS.chevronDown}</span>`;
+}
 
-  const section = mount.querySelector('#templates-section');
+// Listado completo, sin límite — accesible desde "Ver todas mis rutinas".
+export async function renderAllRoutines(mount) {
+  const templates = await repo.listTemplates();
+  const templatesWithMeta = await loadTemplatesMeta(templates);
+  const ordered = sortByRecentUse(templatesWithMeta);
+
+  mount.innerHTML = `
+    <h1 class="type-title" style="margin-bottom:var(--space-4);">Mis rutinas</h1>
+    <div class="action-card-list" id="all-routines-list"></div>
+  `;
+
+  const list = mount.querySelector('#all-routines-list');
+  if (!ordered.length) {
+    list.innerHTML = `<div class="empty-state">Todavía no tienes rutinas.</div>`;
+    return;
+  }
+  list.innerHTML = ordered.map((t) => routineCardHtml(t)).join('');
+  list.querySelectorAll('.action-card[data-id]').forEach((card) => {
+    card.addEventListener('click', () => navigate(`/entreno/plantilla/${card.dataset.id}`));
+  });
+}
+
+async function loadTemplatesMeta(templates) {
+  return Promise.all(templates.map(async (t) => {
+    const [exercises, lastWorkout] = await Promise.all([
+      repo.getTemplateExercises(t.id),
+      repo.getLastWorkoutForTemplate(t.id),
+    ]);
+    return { ...t, exerciseCount: exercises.length, lastWorkout };
+  }));
+}
+
+// Con uso primero (más reciente primero), sin uso después (en su orden habitual).
+function sortByRecentUse(templates) {
+  const withUsage = templates.filter((t) => t.lastWorkout);
+  const withoutUsage = templates.filter((t) => !t.lastWorkout);
+  withUsage.sort((a, b) => (a.lastWorkout.date < b.lastWorkout.date ? 1 : -1));
+  return [...withUsage, ...withoutUsage];
+}
+
+function templateMetaLine(t) {
+  const parts = [`${t.exerciseCount} ejercicio${t.exerciseCount === 1 ? '' : 's'}`];
+  parts.push(t.lastWorkout ? `Último uso: ${relativeDays(t.lastWorkout.date)}` : 'Sin usar todavía');
+  return parts.join(' · ');
+}
+
+function routineCardHtml(t) {
+  return `
+    <button class="action-card" data-id="${t.id}">
+      <span class="action-card-icon">${templateIconHtml(t.icon)}</span>
+      <span class="action-card-body">
+        <span class="action-card-title">${escapeHtml(t.name)}</span>
+        <span class="action-card-desc">${escapeHtml(templateMetaLine(t))}</span>
+      </span>
+      <span class="action-card-chevron">${ACTION_ICONS.chevronRight}</span>
+    </button>
+  `;
+}
+
+function renderMyRoutinesSection(mount, templates) {
+  const section = mount.querySelector('#my-routines-section');
+  if (!templates.length) { section.innerHTML = ''; return; }
+
+  const stored = settings.getTemplatesGridCollapsed();
+  const collapsed = stored ?? false;
+
+  const ordered = sortByRecentUse(templates);
+  const shown = ordered.slice(0, 3);
+
   section.innerHTML = `
-    <div class="row" style="margin-bottom:${collapsed ? '0' : 'var(--space-2)'};">
-      <div class="section-label" style="margin-bottom:0;">Tus rutinas${collapsed && templates.length ? ` · ${templates.length}` : ''}</div>
-      <button class="icon-btn" id="toggle-templates" aria-label="${collapsed ? 'Mostrar rutinas' : 'Ocultar rutinas'}">${collapsed ? '▾' : '▴'}</button>
+    <div class="row section-label-row">
+      <div class="section-label-row" style="gap:6px;">
+        <span class="section-label-icon">${ACTION_ICONS.list}</span>
+        <span class="section-label" style="margin-bottom:0;">Mis rutinas · ${templates.length}</span>
+      </div>
+      <button class="icon-btn" id="toggle-routines" aria-label="${collapsed ? 'Mostrar rutinas' : 'Ocultar rutinas'}">${collapseChevronHtml(collapsed)}</button>
     </div>
     ${collapsed ? '' : `
-      <div class="template-grid" id="template-grid" style="margin-bottom:var(--space-4);">
-        ${templates.map((t) => `
-          <button class="template-tile" data-id="${t.id}">
-            <span class="icon-badge icon-badge--lg">${templateIconHtml(t.icon)}</span>
-            <span class="template-tile-label">${escapeHtml(t.name)}</span>
-          </button>
-        `).join('')}
-        <button class="template-tile template-tile-add" id="add-template">
-          <span class="icon-badge icon-badge--lg">+</span>
-          <span class="template-tile-label">Nueva</span>
-        </button>
+      <div class="action-card-list" style="margin-bottom:${templates.length > 3 ? 'var(--space-2)' : '0'};">
+        ${shown.map((t) => routineCardHtml(t)).join('')}
       </div>
-      <div class="grouped-list">
-        <div class="grouped-row" id="new-workout" style="cursor:pointer;">
-          <span class="type-body">+ Entrenamiento libre</span>
-          <span class="text-faint">›</span>
-        </div>
-        <div class="grouped-row" id="import-photo" style="cursor:pointer;">
-          <span class="type-body">📷 Importar desde foto</span>
-          <span class="text-faint">›</span>
-        </div>
+      ${templates.length > 3 ? `<button class="btn btn-ghost btn-sm" id="see-all-routines" style="padding-left:0;">Ver todas mis rutinas ›</button>` : ''}
+    `}
+  `;
+
+  section.querySelector('#toggle-routines').addEventListener('click', async () => {
+    await settings.setTemplatesGridCollapsed(!collapsed);
+    renderMyRoutinesSection(mount, templates);
+  });
+  section.querySelectorAll('.action-card[data-id]').forEach((card) => {
+    card.addEventListener('click', () => navigate(`/entreno/plantilla/${card.dataset.id}`));
+  });
+  section.querySelector('#see-all-routines')?.addEventListener('click', () => navigate('/entreno/rutinas'));
+}
+
+function renderActionsSection(mount) {
+  const section = mount.querySelector('#actions-section');
+  const collapsed = settings.getActionsCollapsed();
+
+  section.innerHTML = `
+    <div class="row section-label-row">
+      <div class="section-label-row" style="gap:6px;">
+        <span class="section-label-icon">${ACTION_ICONS.plus}</span>
+        <span class="section-label" style="margin-bottom:0;">Acciones</span>
+      </div>
+      <button class="icon-btn" id="toggle-actions" aria-label="${collapsed ? 'Mostrar acciones' : 'Ocultar acciones'}">${collapseChevronHtml(collapsed)}</button>
+    </div>
+    ${collapsed ? '' : `
+      <div class="action-card-list">
+        <button class="action-card" id="add-template">
+          <span class="action-card-icon action-card-icon--dashed">${ACTION_ICONS.plus}</span>
+          <span class="action-card-body">
+            <span class="action-card-title">Crear rutina</span>
+            <span class="action-card-desc">Diseña tu rutina desde cero</span>
+          </span>
+          <span class="action-card-chevron">${ACTION_ICONS.chevronRight}</span>
+        </button>
+
+        <button class="action-card" id="new-workout">
+          <span class="action-card-icon">${ACTION_ICONS.dumbbell}</span>
+          <span class="action-card-body">
+            <span class="action-card-title">Entrenamiento libre</span>
+            <span class="action-card-desc">Registra una sesión sin rutina</span>
+          </span>
+          <span class="action-card-chevron">${ACTION_ICONS.chevronRight}</span>
+        </button>
+
+        <button class="action-card" id="import-photo">
+          <span class="action-card-icon">${ACTION_ICONS.camera}</span>
+          <span class="action-card-body">
+            <span class="action-card-title">Importar desde foto</span>
+            <span class="action-card-desc">Convierte tu rutina en segundos</span>
+          </span>
+          <span class="action-card-badge">IA</span>
+          <span class="action-card-chevron">${ACTION_ICONS.chevronRight}</span>
+        </button>
       </div>
     `}
   `;
 
-  section.querySelector('#toggle-templates').addEventListener('click', async () => {
-    await settings.setTemplatesGridCollapsed(!collapsed);
-    renderTemplatesSection(mount, templates);
+  section.querySelector('#toggle-actions').addEventListener('click', async () => {
+    await settings.setActionsCollapsed(!collapsed);
+    renderActionsSection(mount);
   });
-  section.querySelector('#add-template')?.addEventListener('click', () => openNewTemplateSheet());
+  section.querySelector('#add-template')?.addEventListener('click', () => navigate('/entreno/rutina-nueva'));
   section.querySelector('#new-workout')?.addEventListener('click', () => navigate('/entreno/nuevo'));
   section.querySelector('#import-photo')?.addEventListener('click', () => navigate('/entreno/importar-foto'));
-  section.querySelectorAll('.template-tile[data-id]').forEach((tile) => {
-    tile.addEventListener('click', () => navigate(`/entreno/plantilla/${tile.dataset.id}`));
-  });
-}
-
-function openNewTemplateSheet() {
-  let selectedIcon = TEMPLATE_ICONS[0].id;
-  openSheet(`
-    <h3 class="type-headline" style="margin-bottom:20px;">Nueva rutina</h3>
-    <div class="field">
-      <label class="label">Nombre</label>
-      <input type="text" id="t-name" placeholder="Ej. Día 1 · Pecho" autofocus />
-    </div>
-    <div class="field">
-      <label class="label">Icono</label>
-      <div class="icon-picker" id="icon-picker">
-        ${TEMPLATE_ICONS.map((ic, i) => `<button class="icon-picker-opt ${i === 0 ? 'active' : ''}" data-icon="${ic.id}" aria-label="${ic.label}">${templateIconHtml(ic.id)}</button>`).join('')}
-      </div>
-    </div>
-    <button class="btn btn-primary btn-block" id="t-save">Crear rutina</button>
-  `, {
-    onMount: (sheet, close) => {
-      sheet.querySelector('#icon-picker').addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-icon]');
-        if (!btn) return;
-        selectedIcon = btn.dataset.icon;
-        sheet.querySelectorAll('.icon-picker-opt').forEach((b) => b.classList.toggle('active', b === btn));
-      });
-      sheet.querySelector('#t-save').addEventListener('click', async () => {
-        const name = sheet.querySelector('#t-name').value.trim();
-        if (!name) { toast('El nombre es obligatorio'); return; }
-        const template = await repo.createTemplate({ name, icon: selectedIcon });
-        close();
-        navigate(`/entreno/plantilla/${template.id}`);
-      });
-    },
-  });
 }

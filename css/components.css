@@ -336,6 +336,120 @@
   white-space: nowrap;
 }
 
+/* Tarjetas de acción de Entreno (Nueva rutina / rutinas / Entrenamiento libre /
+   Importar desde foto) — misma familia visual que el resto de la app: fondo
+   --surface, borde sutil, radio grande. */
+.action-card-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.action-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  text-align: left;
+  box-shadow: var(--shadow-card);
+}
+.action-card:active { background: var(--surface-2); }
+.action-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+  color: var(--accent);
+  overflow: hidden;
+}
+.action-card-icon svg { width: 22px; height: 22px; }
+.action-card-icon--dashed {
+  background: none;
+  border: 1.5px dashed var(--accent);
+}
+.action-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.action-card-title {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.action-card-desc {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.action-card-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-pill);
+  padding: 3px 7px;
+  flex-shrink: 0;
+}
+.action-card-chevron {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.action-card-chevron svg { width: 14px; height: 14px; }
+
+/* Selector de modo de importación por foto (Detectar automáticamente / Una
+   rutina / Programa completo) — tarjetas seleccionables tipo radio. */
+.import-mode-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.import-mode-opt--active { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Anillo de progreso simulado de la pantalla "Analizando…" */
+.analyzing-ring {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: conic-gradient(var(--accent) calc(var(--pct) * 1%), var(--surface-2) 0);
+  transition: background 300ms var(--ease);
+}
+.analyzing-ring::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+.analyzing-pct {
+  position: relative;
+  z-index: 1;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Calendario mensual de entrenamientos — representa sesiones realizadas */
 .cal-header {
   display: flex;
@@ -399,6 +513,31 @@
   background: var(--accent);
 }
 .cal-day.has-multiple .cal-dot { width: 14px; height: 5px; border-radius: var(--radius-pill); }
+
+.cal-header .icon-btn { background: var(--surface-2); }
+.cal-header .icon-btn:active { background: var(--border); }
+
+/* Leyenda discreta al pie del calendario */
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 0.5px solid var(--border);
+}
+.cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+.cal-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.cal-legend-dot--workout { background: var(--accent); }
+.cal-legend-dot--today { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.cal-legend-dot--empty { background: none; border: 1.3px solid var(--border); }
 
 /* Selector de icono (emoji o ilustración de músculo) para plantillas */
 .icon-picker {
@@ -490,6 +629,21 @@
   flex-shrink: 0;
 }
 .icon-btn:active { background: var(--surface-2); }
+.icon-btn svg { width: 16px; height: 16px; }
+
+/* Volver a "Rutinas" dentro del editor de importación por foto — más grande
+   y con etiqueta, para que se lea claramente como retroceder. */
+.re-back-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.re-back-icon svg { width: 22px; height: 22px; }
 
 /* Filas de checkbox (selección de datos IA) */
 .checkbox-row {

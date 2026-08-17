@@ -23,7 +23,6 @@ const PERIODS = [
   { key: '3m', label: '3 meses' },
   { key: '6m', label: '6 meses' },
   { key: '1y', label: '1 año' },
-  { key: 'all', label: 'Todo' },
 ];
 
 let chartInstance = null;
@@ -46,96 +45,54 @@ export async function renderMeasurements(mount) {
   const types = await repo.listMeasurementTypes();
 
   mount.innerHTML = `
-    <div class="grid-2" style="margin-bottom:var(--space-5);">
-      <button class="btn btn-primary" id="register-btn">+ Registrar</button>
-      <button class="btn btn-secondary" id="configure-btn">Configurar medidas</button>
-    </div>
-    ${!types.length ? `<div class="empty-state">Activa al menos una medida con "Configurar medidas".</div>` : `
-      <div class="section-label">Resumen</div>
-      <div class="list" id="summary-list" style="margin-bottom:var(--space-5);"></div>
-      <div class="section-label">Historial</div>
-      <div id="history-table" style="margin-bottom:var(--space-5);"></div>
+    ${!types.length ? `
+      <div class="empty-state">Aún no tienes medidas configuradas.</div>
+      <button class="btn btn-primary btn-block" id="configure-btn" style="margin-top:var(--space-4);">Configurar medidas</button>
+    ` : `
+      <div class="grid-2" style="margin-bottom:var(--space-5);">
+        <button class="btn btn-primary" id="register-btn">+ Registrar</button>
+        <button class="btn btn-secondary" id="configure-btn">Configurar medidas</button>
+      </div>
+      <div class="mejoras-row" id="summary-grid" style="grid-template-columns:repeat(2, 1fr);"></div>
     `}
   `;
 
-  mount.querySelector('#register-btn').addEventListener('click', () => openRegisterSheet(mount, types));
   mount.querySelector('#configure-btn').addEventListener('click', () => openConfigureSheet(mount));
+  mount.querySelector('#register-btn')?.addEventListener('click', () => openRegisterSheet(mount, types));
 
   if (!types.length) return;
-  await renderSummaryList(mount, types);
-  await renderHistoryTable(mount, types);
+  await renderSummaryGrid(mount, types);
 }
 
-async function renderSummaryList(mount, types) {
-  const list = mount.querySelector('#summary-list');
-  const cards = [];
+async function renderSummaryGrid(mount, types) {
+  const grid = mount.querySelector('#summary-grid');
+  const tiles = [];
   for (const type of types) {
     const entries = await repo.listMeasurementsByType(type.id); // desc
-    if (!entries.length) continue;
+    if (!entries.length) {
+      tiles.push({ type, valueText: 'Sin dato', deltaText: '' });
+      continue;
+    }
     const current = measurementValue(entries[0]);
     const initial = measurementValue(entries[entries.length - 1]);
     const { abs } = changeSinceFirst(current, initial);
-    cards.push({ type, latest: entries[0], abs });
+    const valueText = type.bilateral
+      ? `D ${formatNumber(entries[0].valueRight, 1)} / I ${formatNumber(entries[0].valueLeft, 1)}`
+      : `${formatNumber(current, 1)} ${type.unit}`;
+    tiles.push({ type, valueText, deltaText: entries.length > 1 ? `${arrowFor(abs)} ${formatSigned(abs)} ${type.unit}` : '' });
   }
-  if (!cards.length) {
-    list.innerHTML = `<div class="empty-state">Todavía no has registrado ninguna medida.</div>`;
-    return;
-  }
-  list.innerHTML = cards.map(({ type, latest, abs }) => `
-    <div class="card row" data-id="${type.id}" style="cursor:pointer;">
-      <div>
-        <div class="type-caption text-dim">${escapeHtml(type.name)}</div>
-        <div class="type-headline" style="font-size:20px;">
-          ${type.bilateral
-            ? `D ${formatNumber(latest.valueRight, 1)} / I ${formatNumber(latest.valueLeft, 1)} ${type.unit}`
-            : `${formatNumber(latest.value, 1)} ${type.unit}`}
-        </div>
-      </div>
-      <span class="badge badge-neutral">${arrowFor(abs)} ${abs != null ? formatSigned(abs) : '—'} ${type.unit} desde inicio</span>
+
+  grid.innerHTML = tiles.map(({ type, valueText, deltaText }) => `
+    <div class="mejora-tile" data-id="${type.id}">
+      <div class="type-caption" style="font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:var(--text-tertiary);">${escapeHtml(type.name)}</div>
+      <div class="type-headline" style="font-weight:700; margin-top:6px;">${valueText}</div>
+      ${deltaText ? `<div class="type-caption" style="font-weight:700; color:var(--accent); margin-top:2px;">${deltaText}</div>` : ''}
     </div>
   `).join('');
-  list.querySelectorAll('[data-id]').forEach((el) => {
+
+  grid.querySelectorAll('[data-id]').forEach((el) => {
     el.addEventListener('click', () => navigate(`/progreso/medidas/${el.dataset.id}`));
   });
-}
-
-async function renderHistoryTable(mount, types) {
-  const container = mount.querySelector('#history-table');
-  const perType = [];
-  const dateSet = new Set();
-  for (const type of types) {
-    const entries = await repo.listMeasurementsByType(type.id); // desc
-    if (!entries.length) continue;
-    perType.push({ type, byDate: Object.fromEntries(entries.map((e) => [e.date, e])) });
-    entries.forEach((e) => dateSet.add(e.date));
-  }
-  if (!perType.length) { container.innerHTML = ''; return; }
-  const dates = Array.from(dateSet).sort().slice(-12);
-
-  container.innerHTML = `
-    <div class="card" style="overflow-x:auto; padding:var(--space-3);">
-      <table style="border-collapse:collapse; font-size:13px;">
-        <thead>
-          <tr>
-            <th style="text-align:left; padding:4px 14px 8px 0; position:sticky; left:0; background:var(--surface); color:var(--text-tertiary); font-size:11px; text-transform:uppercase;">Medida</th>
-            ${dates.map((d) => `<th style="padding:4px 14px 8px; text-align:right; color:var(--text-tertiary); font-size:11px; white-space:nowrap;">${formatDateShort(d)}</th>`).join('')}
-          </tr>
-        </thead>
-        <tbody>
-          ${perType.map(({ type, byDate }) => `
-            <tr style="border-top:0.5px solid var(--border);">
-              <td style="padding:8px 14px 8px 0; font-weight:600; position:sticky; left:0; background:var(--surface); white-space:nowrap;">${escapeHtml(type.name)}</td>
-              ${dates.map((d) => {
-                const e = byDate[d];
-                const v = e ? measurementValue(e) : null;
-                return `<td style="padding:8px 14px; text-align:right; white-space:nowrap; color:${v != null ? 'var(--text)' : 'var(--text-tertiary)'};">${v != null ? formatNumber(v, 1) : '–'}</td>`;
-              }).join('')}
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
 }
 
 function arrowFor(n) {
@@ -147,11 +104,13 @@ function formatSigned(n) {
   return `${sign}${formatNumber(n, 1)}`;
 }
 
+// Checklist simple — el usuario marca qué medidas quiere controlar y pulsa
+// "Guardar configuración". Nada se aplica hasta guardar.
 function openConfigureSheet(mount) {
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:6px;">Configurar medidas</h3>
-    <p class="type-caption text-dim" style="margin-bottom:14px;">Activa solo las medidas que quieras controlar.</p>
-    <div id="types-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:var(--space-5);"></div>
+    <p class="type-caption text-dim" style="margin-bottom:14px;">Marca solo las medidas que quieras controlar.</p>
+    <div id="types-list" style="margin-bottom:var(--space-4);"></div>
     <div class="field">
       <label class="label">Nueva medida personalizada</label>
       <input type="text" id="new-type-name" placeholder="Ej. Antebrazo" />
@@ -160,36 +119,41 @@ function openConfigureSheet(mount) {
       <span class="type-body">Medida bilateral (izquierda/derecha)</span>
       <input type="checkbox" id="new-type-bilateral" />
     </label>
-    <button class="btn btn-secondary btn-block" id="add-type-btn">+ Añadir medida</button>
+    <button class="btn btn-secondary btn-block" id="add-type-btn" style="margin-bottom:var(--space-3);">+ Añadir medida</button>
+    <button class="btn btn-primary btn-block" id="save-config-btn">Guardar configuración</button>
   `, {
-    onMount: async (sheet) => {
+    onMount: async (sheet, close) => {
+      let all = [];
+      const pendingEnabled = {};
+
       async function refresh() {
-        const all = await repo.listMeasurementTypes({ includeDisabled: true });
-        sheet.querySelector('#types-chips').innerHTML = all.map((t) => `
-          <span class="subtab ${t.enabled !== false ? 'active' : ''}" style="display:inline-flex; align-items:center; gap:6px; padding-right:8px;">
-            <span class="chip-toggle" data-id="${t.id}" style="cursor:pointer;">${t.enabled !== false ? '✓ ' : ''}${escapeHtml(t.name)}</span>
-            <span class="chip-delete" data-id="${t.id}" style="cursor:pointer; opacity:0.6;">✕</span>
-          </span>
-        `).join('');
-        sheet.querySelectorAll('.chip-toggle').forEach((chip) => {
-          chip.addEventListener('click', async () => {
-            const t = all.find((x) => x.id === chip.dataset.id);
-            await repo.setMeasurementTypeEnabled(t.id, t.enabled === false);
-            await refresh();
-            await renderMeasurements(mount);
-          });
+        all = await repo.listMeasurementTypes({ includeDisabled: true });
+        all.forEach((t) => { if (!(t.id in pendingEnabled)) pendingEnabled[t.id] = t.enabled !== false; });
+        sheet.querySelector('#types-list').innerHTML = `<div class="grouped-list">${all.map((t) => `
+          <label class="checkbox-row" data-id="${t.id}">
+            <span class="type-body">${escapeHtml(t.name)}${t.bilateral ? ' <span class="type-caption text-faint">(izq./der.)</span>' : ''}</span>
+            <span class="row" style="gap:10px;">
+              <input type="checkbox" class="type-toggle" data-id="${t.id}" ${pendingEnabled[t.id] ? 'checked' : ''} />
+              <button type="button" class="icon-btn type-delete" data-id="${t.id}" aria-label="Eliminar" style="width:26px; height:26px; font-size:13px;">✕</button>
+            </span>
+          </label>
+        `).join('')}</div>`;
+
+        sheet.querySelectorAll('.type-toggle').forEach((cb) => {
+          cb.addEventListener('change', () => { pendingEnabled[cb.dataset.id] = cb.checked; });
         });
-        sheet.querySelectorAll('.chip-delete').forEach((btn) => {
+        sheet.querySelectorAll('.type-delete').forEach((btn) => {
           btn.addEventListener('click', async () => {
             const t = all.find((x) => x.id === btn.dataset.id);
             const ok = await openConfirmSheet(`¿Eliminar "${t.name}" y todo su histórico? Esta acción no se puede deshacer.`, { confirmLabel: 'Eliminar' });
             if (!ok) return;
             await repo.deleteMeasurementType(t.id);
+            delete pendingEnabled[t.id];
             await refresh();
-            await renderMeasurements(mount);
           });
         });
       }
+
       sheet.querySelector('#add-type-btn').addEventListener('click', async () => {
         const name = sheet.querySelector('#new-type-name').value.trim();
         if (!name) { toast('El nombre es obligatorio'); return; }
@@ -198,8 +162,19 @@ function openConfigureSheet(mount) {
         sheet.querySelector('#new-type-name').value = '';
         sheet.querySelector('#new-type-bilateral').checked = false;
         await refresh();
+      });
+
+      sheet.querySelector('#save-config-btn').addEventListener('click', async () => {
+        for (const t of all) {
+          if (pendingEnabled[t.id] !== (t.enabled !== false)) {
+            await repo.setMeasurementTypeEnabled(t.id, pendingEnabled[t.id]);
+          }
+        }
+        close();
+        toast('Configuración guardada');
         await renderMeasurements(mount);
       });
+
       await refresh();
     },
   });
@@ -214,28 +189,22 @@ function openRegisterSheet(mount, types) {
       <input type="date" id="r-date" value="${todayISO()}" />
     </div>
     <div id="r-fields"></div>
-    <button class="btn btn-primary btn-block" id="r-save" style="margin-top:var(--space-2);">Guardar</button>
+    <button class="btn btn-primary btn-block" id="r-save" style="margin-top:var(--space-2);">Guardar medidas</button>
   `, {
-    onMount: async (sheet, close) => {
+    onMount: (sheet, close) => {
       const fieldsBox = sheet.querySelector('#r-fields');
-      const lastByType = {};
-      for (const type of types) {
-        const entries = await repo.listMeasurementsByType(type.id);
-        lastByType[type.id] = entries[0] || null;
-      }
       fieldsBox.innerHTML = types.map((type) => {
-        const last = lastByType[type.id];
         if (type.bilateral) {
           return `
             <div class="field">
-              <label class="label">${escapeHtml(type.name)} (${type.unit})</label>
+              <label class="label">${escapeHtml(type.name)}</label>
               <div class="grid-2">
                 <div>
-                  <div class="type-caption text-faint" style="margin-bottom:4px;">Derecho${last?.valueRight != null ? ` · anterior ${formatNumber(last.valueRight, 1)}` : ''}</div>
+                  <div class="type-caption text-faint" style="margin-bottom:4px;">Derecho</div>
                   <input type="number" inputmode="decimal" step="0.1" class="m-input" data-type="${type.id}" data-side="right" />
                 </div>
                 <div>
-                  <div class="type-caption text-faint" style="margin-bottom:4px;">Izquierdo${last?.valueLeft != null ? ` · anterior ${formatNumber(last.valueLeft, 1)}` : ''}</div>
+                  <div class="type-caption text-faint" style="margin-bottom:4px;">Izquierdo</div>
                   <input type="number" inputmode="decimal" step="0.1" class="m-input" data-type="${type.id}" data-side="left" />
                 </div>
               </div>
@@ -244,7 +213,7 @@ function openRegisterSheet(mount, types) {
         }
         return `
           <div class="field">
-            <label class="label">${escapeHtml(type.name)} (${type.unit})${last?.value != null ? ` · anterior ${formatNumber(last.value, 1)}` : ''}</label>
+            <label class="label">${escapeHtml(type.name)}</label>
             <input type="number" inputmode="decimal" step="0.1" class="m-input" data-type="${type.id}" data-side="single" />
           </div>
         `;

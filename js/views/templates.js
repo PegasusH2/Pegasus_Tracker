@@ -30,9 +30,10 @@ export async function renderTemplateDetail(mount, { templateId }) {
     <div class="type-caption text-dim" style="margin-bottom:2px;">
       ${summary.exerciseCount} ejercicio${summary.exerciseCount === 1 ? '' : 's'} · ${summary.totalSets} series
     </div>
-    <div class="type-caption text-faint" style="margin-bottom:var(--space-5);">
+    <div class="type-caption text-faint" style="margin-bottom:${template.description ? '2px' : 'var(--space-5)'};">
       ${lastWorkout ? `Último entrenamiento · ${relativeDays(lastWorkout.date)}` : 'Todavía no has hecho esta rutina'}
     </div>
+    ${template.description ? `<div class="type-body text-dim" style="margin-bottom:var(--space-5); white-space:pre-wrap;">${escapeHtml(template.description)}</div>` : ''}
 
     ${exercises.length ? `<button class="btn btn-primary btn-block" id="start-workout" style="margin-bottom:var(--space-5);">Empezar</button>` : ''}
 
@@ -92,7 +93,7 @@ function renderExerciseList(mount, template, exercises) {
   });
 }
 
-const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente' };
+const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente', amrap: 'AMRAP' };
 
 function targetSummary(te) {
   const parts = [`${te.targetSets} serie${te.targetSets === 1 ? '' : 's'}`];
@@ -204,7 +205,7 @@ function openTemplateExerciseForm(mount, template, { te, exercise, isNew }) {
 }
 
 function openTypeChoiceSheet(current, onSelect) {
-  const options = ['normal', 'fallo', 'restpause', 'descendente'];
+  const options = ['normal', 'fallo', 'restpause', 'descendente', 'amrap'];
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:12px;">Tipo de serie</h3>
     <div class="grouped-list">
@@ -233,6 +234,10 @@ function openEditTemplateSheet(mount, template) {
       <input type="text" id="t-name" value="${escapeHtml(template.name)}" />
     </div>
     <div class="field">
+      <label class="label">Descripción (opcional)</label>
+      <textarea id="t-desc" rows="2" placeholder="Objetivo, enfoque, notas...">${escapeHtml(template.description || '')}</textarea>
+    </div>
+    <div class="field">
       <label class="label">Icono</label>
       <div class="icon-picker" id="icon-picker">
         ${TEMPLATE_ICONS.map((ic) => `<button class="icon-picker-opt ${ic.id === template.icon ? 'active' : ''}" data-icon="${ic.id}" aria-label="${ic.label}">${templateIconHtml(ic.id)}</button>`).join('')}
@@ -251,7 +256,8 @@ function openEditTemplateSheet(mount, template) {
       sheet.querySelector('#t-save').addEventListener('click', async () => {
         const name = sheet.querySelector('#t-name').value.trim();
         if (!name) { toast('El nombre es obligatorio'); return; }
-        await repo.updateTemplate(template.id, { name, icon: selectedIcon });
+        const description = sheet.querySelector('#t-desc').value.trim();
+        await repo.updateTemplate(template.id, { name, description, icon: selectedIcon });
         close();
         await renderTemplateDetail(mount, { templateId: template.id });
       });

@@ -49,6 +49,12 @@ async function paint(container) {
         `;
       }).join('')}
     </div>
+
+    <div class="cal-legend">
+      <span class="cal-legend-item"><span class="cal-legend-dot cal-legend-dot--workout"></span>Entreno realizado</span>
+      <span class="cal-legend-item"><span class="cal-legend-dot cal-legend-dot--today"></span>Hoy</span>
+      <span class="cal-legend-item"><span class="cal-legend-dot cal-legend-dot--empty"></span>Sin entrenos</span>
+    </div>
   `;
 
   container.querySelector('#cal-prev').addEventListener('click', () => shiftMonth(container, -1));

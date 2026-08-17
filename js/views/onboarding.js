@@ -28,10 +28,11 @@ export function runOnboarding() {
 
     function renderWelcome() {
       app.innerHTML = `
-        <div class="onboarding-screen view-enter">
-          <div class="onboarding-body" style="text-align:center;">
-            <div class="type-hero" style="font-size:32px; margin-bottom:10px;">Fitness Tracker</div>
-            <p class="type-body text-dim">Tu entrenamiento. Tus datos. Tu progreso.</p>
+        <div class="onboarding-screen brand-splash view-enter">
+          <div class="onboarding-body brand-intro">
+            <img src="icons/icon-512.png" alt="Pegasus Tracker" class="brand-logo" />
+            <div class="brand-wordmark">PEGASUS</div>
+            <p class="brand-tagline">TRAIN <span class="brand-dot">&bull;</span> TRACK <span class="brand-dot">&bull;</span> PROGRESS</p>
           </div>
           <button class="btn btn-primary btn-block" id="ob-start">Empezar</button>
         </div>

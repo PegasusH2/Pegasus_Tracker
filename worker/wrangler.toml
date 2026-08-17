@@ -5,6 +5,16 @@ compatibility_date = "2026-01-01"
 [vars]
 GEMINI_MODEL = "gemini-flash-latest"
 
+# KV para el rate limiting (contador de peticiones por IP y hora). Créalo con
+# `wrangler kv namespace create RATE_LIMIT_KV` y sustituye el id de abajo por
+# el que te devuelva ese comando (ver README.md). Si lo dejas sin crear, el
+# Worker sigue funcionando pero SIN límite de peticiones (falla abierto).
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "f8134fb314d84400b642dc4bdffca349"
+
 # Secretos (NUNCA van aquí, se configuran con `wrangler secret put`):
 #   GEMINI_API_KEY    - tu API key de Google AI Studio
 #   APP_SHARED_TOKEN  - una cadena cualquiera que también pondrás en la PWA
+#   ADMIN_SECRET      - tu contraseña de administrador (modo desarrollador,
+#                       ver README.md) — NUNCA va en la PWA ni en el repo

@@ -36,12 +36,17 @@ export async function renderSkinfold(mount) {
   const bodyFatEstimate = currentSum && currentSum.count === 7 ? estimateBodyFatJP7(currentSum.sum) : null;
 
   mount.innerHTML = `
-    <div class="row" style="margin-bottom:var(--space-5);">
-      <button class="btn btn-ghost btn-sm" id="manage-sites" style="padding-left:0;">Configurar puntos</button>
-      <button class="btn btn-secondary btn-sm" id="bulk-entry">+ Registro completo</button>
-    </div>
+    ${sites.length ? `
+      <div class="grid-2" style="margin-bottom:var(--space-5);">
+        <button class="btn btn-primary" id="bulk-entry">+ Registro completo</button>
+        <button class="btn btn-secondary" id="manage-sites">Configurar puntos</button>
+      </div>
+    ` : `
+      <div class="empty-state">Configura primero los puntos que utilizas.</div>
+      <button class="btn btn-primary btn-block" id="manage-sites" style="margin-top:var(--space-4);">Configurar puntos</button>
+    `}
 
-    ${!sites.length ? `<div class="empty-state">Configura primero los puntos que utilizas con "Configurar puntos".</div>` : `
+    ${!sites.length ? '' : `
       <div class="section-label">Puntos</div>
       <div class="grouped-list" id="points-list" style="margin-bottom:var(--space-5);"></div>
 

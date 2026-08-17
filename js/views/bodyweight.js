@@ -12,7 +12,6 @@ const PERIODS = [
   { key: '3m', label: '3 meses' },
   { key: '6m', label: '6 meses' },
   { key: '1y', label: '1 año' },
-  { key: 'all', label: 'Todo' },
 ];
 
 let chartInstance = null;
@@ -34,19 +33,20 @@ export async function renderBodyWeight(mount) {
         <span class="type-hero">${displayNumber(stats.current, unit)}</span>
         <span class="type-headline text-dim">${unit}</span>
       </div>
-      <div class="type-caption text-faint">Media semanal ${formatWeightUnit(stats.weeklyAvg, unit)}</div>
+      ${stats.changeAbs != null ? `<div class="type-body" style="font-weight:700; color:var(--accent); margin-top:2px;">${changeText(stats.changeAbs, unit)} desde el inicio</div>` : ''}
     </div>
 
-    <div class="card stat-grid" style="margin-bottom:var(--space-4);">
+    <button class="btn btn-primary btn-block" id="add-weight" style="margin:var(--space-4) 0 var(--space-5);">+ Registrar peso</button>
+
+    <div class="card stat-grid" style="margin-bottom:var(--space-5);">
       <div class="stat-tile">
         <div class="stat-label">Peso inicial</div>
         <div class="stat-value">${formatWeightUnit(stats.initial, unit)}</div>
         <div class="stat-sub">${formatDate(stats.initialDate)}</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-label">Cambio total</div>
-        <div class="stat-value">${changeText(stats.changeAbs, unit)}</div>
-        <div class="stat-sub">${stats.changePercent != null ? changePercentText(stats.changePercent) : ''}</div>
+        <div class="stat-label">Media semanal</div>
+        <div class="stat-value">${formatWeightUnit(stats.weeklyAvg, unit)}</div>
       </div>
       <div class="stat-tile">
         <div class="stat-label">Cambio semanal</div>
@@ -57,8 +57,6 @@ export async function renderBodyWeight(mount) {
         <div class="stat-value">${changeText(stats.monthlyChange, unit)}</div>
       </div>
     </div>
-
-    <button class="btn btn-secondary btn-block" id="add-weight" style="margin-bottom:var(--space-5);">+ Registrar peso</button>
 
     <div class="row" style="margin-bottom:var(--space-3);">
       <div class="section-label" style="margin-bottom:0;">Evolución</div>
@@ -103,25 +101,16 @@ function changeText(kgValue, unit) {
   return `${sign}${converted.toFixed(1)} ${unit}`;
 }
 
-// El % de cambio es invariante ante la unidad (misma proporción en kg o en lb).
-function changePercentText(value) {
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(1)} %`;
-}
-
 function renderList(mount, entries, unit) {
   const list = mount.querySelector('#weight-list');
   list.innerHTML = `<div class="grouped-list">${entries.map((e) => `
-    <div class="grouped-row" data-id="${e.id}">
-      <div>
-        <div class="type-body num" style="font-weight:600;">${formatWeightUnit(e.weightKg, unit)}</div>
-        <div class="type-caption text-faint">${formatDate(e.date)}${e.notes ? ' · ' + e.notes : ''}</div>
-      </div>
-      <button class="btn btn-ghost btn-sm w-edit">Editar</button>
+    <div class="grouped-row" data-id="${e.id}" style="cursor:pointer;">
+      <div class="type-caption text-faint">${formatDate(e.date)}${e.notes ? ' · ' + e.notes : ''}</div>
+      <div class="type-body num" style="font-weight:700;">${formatWeightUnit(e.weightKg, unit)}</div>
     </div>
   `).join('')}</div>`;
   list.querySelectorAll('[data-id]').forEach((row) => {
-    row.querySelector('.w-edit').addEventListener('click', () => {
+    row.addEventListener('click', () => {
       const entry = entries.find((e) => e.id === row.dataset.id);
       openWeightForm(mount, entry);
     });

@@ -220,7 +220,89 @@ db.version(8).stores({
   }
 });
 
-export const SCHEMA_VERSION = 8;
+// v9: objetivo de repeticiones (y peso) POR SERIE — progresión/pirámide
+// (ej. "6/8/10/12") en vez de un único rango uniforme. targetRepsSequence
+// (y targetWeightSequence) son un array opcional, uno por serie; cuando
+// existen, priman sobre targetRepsMin/Max al crear las series de una nueva
+// sesión (ver repository.js:startWorkoutFromTemplate). null en todo lo
+// existente = comportamiento actual intacto (rango uniforme).
+db.version(9).stores({
+  exercises: 'id, name, muscleGroup, archived',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+}).upgrade(async (tx) => {
+  await tx.table('templateExercises').toCollection().modify((te) => {
+    if (te.targetRepsSequence === undefined) te.targetRepsSequence = null;
+    if (te.targetWeightSequence === undefined) te.targetWeightSequence = null;
+  });
+  await tx.table('workoutExercises').toCollection().modify((we) => {
+    if (we.targetRepsSequence === undefined) we.targetRepsSequence = null;
+    if (we.targetWeightSequence === undefined) we.targetWeightSequence = null;
+  });
+});
+
+// v10: descripción opcional por rutina + ejercicios favoritos (para el
+// selector de ejercicios de la rutina manual: pestañas Favoritos/Recientes).
+// "Recientes" no necesita tabla nueva — se deriva de los workouts recientes
+// (ver repository.js:getRecentExercises).
+db.version(10).stores({
+  exercises: 'id, name, muscleGroup, archived, isFavorite',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+}).upgrade(async (tx) => {
+  await tx.table('exercises').toCollection().modify((e) => {
+    if (e.isFavorite === undefined) e.isFavorite = false;
+  });
+  await tx.table('templates').toCollection().modify((t) => {
+    if (t.description === undefined) t.description = '';
+  });
+});
+
+// v11: texto original de la celda cuando la importación por IA marca un
+// ejercicio con confidence baja (ver docs/ai-import-v2-design.md). Permite
+// revisar contra la fuente en vez de corregir "a ciegas". null en todo lo
+// existente = comportamiento actual intacto.
+db.version(11).stores({
+  exercises: 'id, name, muscleGroup, archived, isFavorite',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+}).upgrade(async (tx) => {
+  await tx.table('templateExercises').toCollection().modify((te) => {
+    if (te.rawText === undefined) te.rawText = null;
+  });
+});
+
+export const SCHEMA_VERSION = 11;
 
 export function newId() {
   return crypto.randomUUID();

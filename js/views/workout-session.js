@@ -470,7 +470,7 @@ function targetCaption(we) {
   return `<div class="type-caption text-faint" style="margin-bottom:10px;">Objetivo: ${parts.join(' · ')}</div>`;
 }
 
-const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente' };
+const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente', amrap: 'AMRAP' };
 function setTypeLabel(type) {
   return SET_TYPE_LABELS[type] ?? 'Normal';
 }
@@ -478,7 +478,7 @@ function setTypeLabel(type) {
 // Sheet compacto para elegir el tipo de serie — se abre solo al pedirlo (sección
 // 18 del pedido: "no mostrar cuatro botones grandes permanentemente").
 function openSetTypeSheet(currentType, onSelect) {
-  const options = ['normal', 'fallo', 'restpause', 'descendente'];
+  const options = ['normal', 'fallo', 'restpause', 'descendente', 'amrap'];
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:12px;">Tipo de serie</h3>
     <div class="grouped-list">
