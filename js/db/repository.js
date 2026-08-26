@@ -1,8 +1,108 @@
-import { db, newId } from './schema.js';
+import { db, newId, SYNCED_TABLES } from './schema.js';
 import {
   cleanNonNegativeNumber, cleanNonNegativeInt,
   requireNonEmptyString, requirePositiveNumber, requireValidDate,
 } from '../core/validate.js';
+import { emit } from '../core/store.js';
+
+// ---------- Sincronización (outbox) ----------
+// Cuando hay sesión Supabase activa, cada escritura sobre una de las 11
+// tablas sincronizables (ver js/db/schema.js:SYNCED_TABLES) añade además una
+// entrada a `syncQueue` para que js/core/sync.js la suba en segundo plano.
+// Mientras `syncActive` sea false (modo local, sin cuenta) esto es un no-op
+// total — cero escrituras extra, cero coste. repository.js NO importa
+// auth.js/sync.js a propósito (evita un ciclo de dependencias); es sync.js
+// quien importa repository.js y empuja este flag hacia aquí en cada cambio
+// de sesión (ver sync.js:initSync/onAuthStateChange).
+let syncActive = false;
+export function setSyncActive(active) {
+  syncActive = active;
+}
+export function isSyncActive() {
+  return syncActive;
+}
+
+// Compacta cambios repetidos sobre la misma fila antes de sincronizar: varias
+// ediciones offline de un mismo set/peso/etc. se colapsan en una sola entrada
+// con el payload más reciente, y un delete sobre algo que se creó y borró sin
+// llegar a subirse nunca desaparece de la cola (no hay nada que decirle a
+// Supabase). payload es el snapshot completo de la fila tras la operación
+// (null para 'delete').
+async function enqueueChange(entity, entityId, operation, payload) {
+  if (!syncActive) return;
+  const existing = await db.syncQueue
+    .where('[entity+entityId]').equals([entity, entityId])
+    .and((q) => q.status === 'pending' || q.status === 'failed')
+    .first();
+
+  if (existing) {
+    if (operation === 'delete' && existing.operation === 'create') {
+      await db.syncQueue.delete(existing.id);
+      return;
+    }
+    await db.syncQueue.update(existing.id, {
+      operation: existing.operation === 'create' ? 'create' : operation,
+      payload,
+      status: 'pending',
+      attempts: 0,
+      lastError: null,
+    });
+    emit('sync:queued', { entity, entityId });
+    return;
+  }
+
+  await db.syncQueue.add({
+    id: newId(),
+    entity,
+    entityId,
+    operation,
+    payload,
+    createdAt: new Date().toISOString(),
+    attempts: 0,
+    lastAttemptAt: null,
+    lastError: null,
+    syncedAt: null,
+    status: 'pending',
+  });
+  // js/core/sync.js escucha esto para lanzar una sincronización en segundo
+  // plano con un pequeño debounce — repository.js no importa sync.js
+  // directamente para no crear un ciclo (sync.js sí importa repository.js).
+  emit('sync:queued', { entity, entityId });
+}
+
+// Exportada: js/core/sync.js la reutiliza tal cual para la migración inicial
+// de datos locales al crear/iniciar sesión por primera vez (encola cada fila
+// ya existente como si acabara de crearse — mismo camino, cero código
+// duplicado). Ver js/core/sync.js:migrateLocalDataToAccount.
+export function enqueueCreate(entity, row) {
+  return enqueueChange(entity, row.id, 'create', row);
+}
+
+// Relee la fila tras el update para encolar el estado COMPLETO (evita tener
+// que reconstruir a mano el resultado de un `db.table.update(id, changes)`
+// parcial); solo se paga esta lectura extra cuando hay sesión activa.
+async function enqueueUpdate(entity, id) {
+  if (!syncActive) return;
+  const row = await db[entity].get(id);
+  if (!row) return;
+  await enqueueChange(entity, id, 'update', row);
+}
+
+function enqueueDelete(entity, id) {
+  return enqueueChange(entity, id, 'delete', null);
+}
+
+// Nº total de filas en las 11 tablas sincronizables — usado por la pantalla
+// de Ajustes > Cuenta al ofrecer migrar datos locales a una cuenta nueva
+// (ver js/core/sync.js:migrateLocalDataToAccount), solo para mostrar
+// "¿subir tus N registros?" antes de que el usuario confirme.
+export async function countLocalRows() {
+  let total = 0;
+  for (const table of SYNCED_TABLES) {
+    total += await db[table].count();
+  }
+  return total;
+}
 
 // Campos numéricos de `sets` que representan una cantidad física — nunca
 // tienen sentido en negativo. Se sanean (nunca lanzan) porque una serie se
@@ -54,23 +154,28 @@ export async function createExercise({ name, muscleGroup = '', notes = '', loadM
     createdAt: new Date().toISOString(),
   };
   await db.exercises.add(exercise);
+  await enqueueCreate('exercises', exercise);
   return exercise;
 }
 
 export async function updateExercise(id, changes) {
   await db.exercises.update(id, changes);
+  await enqueueUpdate('exercises', id);
 }
 
 export async function setExerciseArchived(id, archived) {
   await db.exercises.update(id, { archived });
+  await enqueueUpdate('exercises', id);
 }
 
 export async function setExerciseFavorite(id, isFavorite) {
   await db.exercises.update(id, { isFavorite });
+  await enqueueUpdate('exercises', id);
 }
 
 export async function deleteExercise(id) {
   await db.exercises.delete(id);
+  await enqueueDelete('exercises', id);
 }
 
 // Ejercicios usados en los entrenamientos más recientes, sin repetir, en
@@ -107,6 +212,7 @@ export async function createWorkout({ name, date }) {
     updatedAt: new Date().toISOString(),
   };
   await db.workouts.add(workout);
+  await enqueueCreate('workouts', workout);
   return workout;
 }
 
@@ -116,19 +222,28 @@ export async function getWorkout(id) {
 
 export async function updateWorkout(id, changes) {
   await db.workouts.update(id, { ...changes, updatedAt: new Date().toISOString() });
+  await enqueueUpdate('workouts', id);
 }
 
 export async function deleteWorkout(id) {
   // Transacción: si se interrumpe a mitad (fallo, pestaña cerrada), no debe
   // quedar el entrenamiento borrado con series/ejercicios huérfanos, ni al
-  // revés — o se borra todo, o no se borra nada.
-  await db.transaction('rw', [db.workoutExercises, db.sets, db.workouts], async () => {
+  // revés — o se borra todo, o no se borra nada. syncQueue entra en la misma
+  // transacción porque cada fila borrada (workout + cada workoutExercise +
+  // cada set) necesita su propio tombstone — si solo se encolara el workout,
+  // otro dispositivo nunca se enteraría de que sus ejercicios/series
+  // también desaparecieron.
+  await db.transaction('rw', [db.workoutExercises, db.sets, db.workouts, db.syncQueue], async () => {
     const wes = await db.workoutExercises.where('workoutId').equals(id).toArray();
     for (const we of wes) {
+      const sets = await db.sets.where('workoutExerciseId').equals(we.id).toArray();
       await db.sets.where('workoutExerciseId').equals(we.id).delete();
+      for (const s of sets) await enqueueChange('sets', s.id, 'delete', null);
     }
     await db.workoutExercises.where('workoutId').equals(id).delete();
+    for (const we of wes) await enqueueChange('workoutExercises', we.id, 'delete', null);
     await db.workouts.delete(id);
+    await enqueueChange('workouts', id, 'delete', null);
   });
 }
 
@@ -193,6 +308,7 @@ export async function addExerciseToWorkout(workoutId, exerciseId, targets = {}) 
     targetWeightSequence: targets.targetWeightSequence ?? null,
   };
   await db.workoutExercises.add(we);
+  await enqueueCreate('workoutExercises', we);
   return we;
 }
 
@@ -201,14 +317,18 @@ export async function getWorkoutExercise(id) {
 }
 
 export async function removeExerciseFromWorkout(workoutExerciseId) {
-  await db.transaction('rw', [db.sets, db.workoutExercises], async () => {
+  await db.transaction('rw', [db.sets, db.workoutExercises, db.syncQueue], async () => {
+    const sets = await db.sets.where('workoutExerciseId').equals(workoutExerciseId).toArray();
     await db.sets.where('workoutExerciseId').equals(workoutExerciseId).delete();
+    for (const s of sets) await enqueueChange('sets', s.id, 'delete', null);
     await db.workoutExercises.delete(workoutExerciseId);
+    await enqueueChange('workoutExercises', workoutExerciseId, 'delete', null);
   });
 }
 
 export async function reorderWorkoutExercise(workoutExerciseId, newOrder) {
   await db.workoutExercises.update(workoutExerciseId, { order: newOrder });
+  await enqueueUpdate('workoutExercises', workoutExerciseId);
 }
 
 // Devuelve los ejercicios de un entrenamiento, ordenados, con sus series incluidas.
@@ -229,7 +349,9 @@ export async function getWorkoutDetail(workoutId) {
 // de series) de uno anterior. Los valores (peso/reps/RIR) NO se copian como
 // realizados — cada serie nueva se crea vacía; el entrenamiento antiguo no se toca.
 export async function repeatWorkout(oldWorkoutId, { name, date }) {
-  return db.transaction('rw', [db.workouts, db.workoutExercises, db.sets, db.exercises], async () => {
+  // syncQueue entra en la transacción porque createWorkout/addExerciseToWorkout/
+  // addSet (todas llamadas aquí dentro) ya encolan sus propios cambios.
+  return db.transaction('rw', [db.workouts, db.workoutExercises, db.sets, db.exercises, db.syncQueue], async () => {
     const detail = await getWorkoutDetail(oldWorkoutId);
     if (!detail) throw new Error('Entrenamiento original no encontrado');
 
@@ -269,18 +391,22 @@ export async function createTemplate({ name, icon, description = '' }) {
     createdAt: new Date().toISOString(),
   };
   await db.templates.add(template);
+  await enqueueCreate('templates', template);
   return template;
 }
 
 export async function updateTemplate(id, changes) {
   await db.templates.update(id, changes);
+  await enqueueUpdate('templates', id);
 }
 
 export async function deleteTemplate(id) {
-  await db.transaction('rw', [db.templateExercises, db.templates], async () => {
+  await db.transaction('rw', [db.templateExercises, db.templates, db.syncQueue], async () => {
     const tes = await db.templateExercises.where('templateId').equals(id).toArray();
     await db.templateExercises.bulkDelete(tes.map((t) => t.id));
+    for (const te of tes) await enqueueChange('templateExercises', te.id, 'delete', null);
     await db.templates.delete(id);
+    await enqueueChange('templates', id, 'delete', null);
   });
 }
 
@@ -337,15 +463,18 @@ export async function addTemplateExercise(templateId, exerciseId, values = {}) {
     rawText: values.rawText ?? null,
   };
   await db.templateExercises.add(te);
+  await enqueueCreate('templateExercises', te);
   return te;
 }
 
 export async function updateTemplateExercise(id, changes) {
   await db.templateExercises.update(id, changes);
+  await enqueueUpdate('templateExercises', id);
 }
 
 export async function removeTemplateExercise(id) {
   await db.templateExercises.delete(id);
+  await enqueueDelete('templateExercises', id);
 }
 
 // direction: -1 (subir) | 1 (bajar)
@@ -357,7 +486,9 @@ export async function moveTemplateExercise(templateId, id, direction) {
   const a = items[idx];
   const b = items[swapIdx];
   await db.templateExercises.update(a.id, { order: b.order });
+  await enqueueUpdate('templateExercises', a.id);
   await db.templateExercises.update(b.id, { order: a.order });
+  await enqueueUpdate('templateExercises', b.id);
 }
 
 export async function getLastWorkoutForTemplate(templateId) {
@@ -378,13 +509,14 @@ export async function startWorkoutFromTemplate(templateId, { date }) {
   // async aparte) — Dexie solo sigue la "zona" de la transacción a través de
   // la cadena de promesas real; llamar a una función separada rompe esa
   // cadena y provoca "PrematureCommitError" en el navegador real.
-  return db.transaction('rw', [db.templates, db.templateExercises, db.exercises, db.workouts, db.workoutExercises, db.sets], async () => {
+  return db.transaction('rw', [db.templates, db.templateExercises, db.exercises, db.workouts, db.workoutExercises, db.sets, db.syncQueue], async () => {
     const template = await getTemplate(templateId);
     if (!template) throw new Error('Plantilla no encontrada');
     const templateExercises = await getTemplateExercises(templateId);
 
     const workout = await createWorkout({ name: template.name, date });
     await db.workouts.update(workout.id, { templateId });
+    await enqueueUpdate('workouts', workout.id);
 
     for (const te of templateExercises) {
       const we = await addExerciseToWorkout(workout.id, te.exerciseId, {
@@ -465,22 +597,26 @@ export async function addSet(workoutExerciseId, values = {}) {
     done: values.done ?? false,
   };
   await db.sets.add(set);
+  await enqueueCreate('sets', set);
   return set;
 }
 
 export async function updateSet(id, changes) {
   await db.sets.update(id, sanitizeSetFields(changes));
+  await enqueueUpdate('sets', id);
 }
 
 export async function deleteSet(id) {
   const set = await db.sets.get(id);
   if (!set) return;
   await db.sets.delete(id);
+  await enqueueDelete('sets', id);
   // Renumerar las series restantes para mantener el orden 1..n
   const remaining = await db.sets.where('workoutExerciseId').equals(set.workoutExerciseId).sortBy('setNumber');
   for (let i = 0; i < remaining.length; i++) {
     if (remaining[i].setNumber !== i + 1) {
       await db.sets.update(remaining[i].id, { setNumber: i + 1 });
+      await enqueueUpdate('sets', remaining[i].id);
     }
   }
 }
@@ -523,16 +659,19 @@ export async function addBodyWeight({ date, weightKg, notes = '' }) {
     notes,
   };
   await db.bodyWeight.add(entry);
+  await enqueueCreate('bodyWeight', entry);
   return entry;
 }
 
 export async function updateBodyWeight(id, changes) {
   if ('weightKg' in changes) changes = { ...changes, weightKg: cleanNonNegativeNumber(changes.weightKg) ?? changes.weightKg };
   await db.bodyWeight.update(id, changes);
+  await enqueueUpdate('bodyWeight', id);
 }
 
 export async function deleteBodyWeight(id) {
   await db.bodyWeight.delete(id);
+  await enqueueDelete('bodyWeight', id);
 }
 
 export async function listBodyWeight() {
@@ -562,21 +701,27 @@ export async function createMeasurementType({ name, unit = 'cm', bilateral = fal
   const existing = await db.measurementTypes.toArray();
   const type = { id: newId(), name: requireNonEmptyString(name, 'El nombre de la medida'), unit, bilateral, enabled: true, order: existing.length };
   await db.measurementTypes.add(type);
+  await enqueueCreate('measurementTypes', type);
   return type;
 }
 
 export async function updateMeasurementType(id, changes) {
   await db.measurementTypes.update(id, changes);
+  await enqueueUpdate('measurementTypes', id);
 }
 
 export async function setMeasurementTypeEnabled(id, enabled) {
   await db.measurementTypes.update(id, { enabled });
+  await enqueueUpdate('measurementTypes', id);
 }
 
 export async function deleteMeasurementType(id) {
-  await db.transaction('rw', [db.measurements, db.measurementTypes], async () => {
+  await db.transaction('rw', [db.measurements, db.measurementTypes, db.syncQueue], async () => {
+    const entries = await db.measurements.where('typeId').equals(id).toArray();
     await db.measurements.where('typeId').equals(id).delete();
+    for (const e of entries) await enqueueChange('measurements', e.id, 'delete', null);
     await db.measurementTypes.delete(id);
+    await enqueueChange('measurementTypes', id, 'delete', null);
   });
 }
 
@@ -591,15 +736,18 @@ export async function addMeasurement({ typeId, date, value = null, valueLeft = n
     notes,
   };
   await db.measurements.add(entry);
+  await enqueueCreate('measurements', entry);
   return entry;
 }
 
 export async function updateMeasurement(id, changes) {
   await db.measurements.update(id, changes);
+  await enqueueUpdate('measurements', id);
 }
 
 export async function deleteMeasurement(id) {
   await db.measurements.delete(id);
+  await enqueueDelete('measurements', id);
 }
 
 export async function listMeasurementsByType(typeId) {
@@ -620,13 +768,17 @@ export async function createSkinfoldSite({ name, instructions = '' }) {
   const existing = await db.skinfoldSites.toArray();
   const site = { id: newId(), name: requireNonEmptyString(name, 'El nombre del punto de pliegue'), instructions, order: existing.length };
   await db.skinfoldSites.add(site);
+  await enqueueCreate('skinfoldSites', site);
   return site;
 }
 
 export async function deleteSkinfoldSite(id) {
-  await db.transaction('rw', [db.skinfoldEntries, db.skinfoldSites], async () => {
+  await db.transaction('rw', [db.skinfoldEntries, db.skinfoldSites, db.syncQueue], async () => {
+    const entries = await db.skinfoldEntries.where('siteId').equals(id).toArray();
     await db.skinfoldEntries.where('siteId').equals(id).delete();
+    for (const e of entries) await enqueueChange('skinfoldEntries', e.id, 'delete', null);
     await db.skinfoldSites.delete(id);
+    await enqueueChange('skinfoldSites', id, 'delete', null);
   });
 }
 
@@ -672,11 +824,13 @@ export async function addSkinfoldEntry({ siteId, date, valueMm }) {
     valueMm: requirePositiveNumber(valueMm, 'El pliegue'),
   };
   await db.skinfoldEntries.add(entry);
+  await enqueueCreate('skinfoldEntries', entry);
   return entry;
 }
 
 export async function deleteSkinfoldEntry(id) {
   await db.skinfoldEntries.delete(id);
+  await enqueueDelete('skinfoldEntries', id);
 }
 
 export async function listSkinfoldEntriesBySite(siteId) {

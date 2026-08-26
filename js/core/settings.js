@@ -16,6 +16,9 @@ const DEFAULTS = {
   actionsCollapsed: false, // "Acciones" — expandido por defecto
   adminSession: null, // { token, expiresAt } — sesión temporal de administrador emitida por el Worker; NUNCA la contraseña/secreto (ver js/core/ai-import.js)
   devModeUnlocked: false, // se desbloquea tocando 5 veces el icono de Ajustes de la barra inferior (ver js/app.js) — una vez desbloqueado, permanece así
+  deviceId: null, // UUID estable de esta instalación (ver js/core/device.js) — se genera una sola vez, no lleva info del dispositivo real
+  lastSyncedAt: null, // ISO string — marca de agua de la última sincronización completada con éxito (ver js/core/sync.js)
+  localDataMigrated: false, // ya se ofreció/hizo la subida inicial de datos locales al crear/iniciar sesión por primera vez en este dispositivo
 };
 
 let cache = { ...DEFAULTS };
@@ -35,7 +38,7 @@ function clampUnits(state) {
 }
 
 export async function loadSettingsCache() {
-  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked] = await Promise.all([
+  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked, deviceId, lastSyncedAt, localDataMigrated] = await Promise.all([
     repo.getSetting('onboardingCompleted', DEFAULTS.onboardingCompleted),
     repo.getSetting('userName', DEFAULTS.userName),
     repo.getSetting('weightUnitsEnabled', DEFAULTS.weightUnitsEnabled),
@@ -46,8 +49,11 @@ export async function loadSettingsCache() {
     repo.getSetting('actionsCollapsed', DEFAULTS.actionsCollapsed),
     repo.getSetting('adminSession', DEFAULTS.adminSession),
     repo.getSetting('devModeUnlocked', DEFAULTS.devModeUnlocked),
+    repo.getSetting('deviceId', DEFAULTS.deviceId),
+    repo.getSetting('lastSyncedAt', DEFAULTS.lastSyncedAt),
+    repo.getSetting('localDataMigrated', DEFAULTS.localDataMigrated),
   ]);
-  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked });
+  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked, deviceId, lastSyncedAt, localDataMigrated });
   loaded = true;
   return cache;
 }
@@ -145,4 +151,31 @@ export async function setTemplatesGridCollapsed(value) {
 export async function setActionsCollapsed(value) {
   cache.actionsCollapsed = value;
   await repo.setSetting('actionsCollapsed', value);
+}
+
+// Identificador estable de esta instalación (ver js/core/device.js) — se
+// lee/escribe aquí porque settings.js ya es el único módulo que toca la
+// tabla `settings`, pero la generación del UUID vive en device.js.
+export function getDeviceId() { ensureLoaded(); return cache.deviceId; }
+export async function setDeviceId(id) {
+  cache.deviceId = id;
+  await repo.setSetting('deviceId', id);
+}
+
+// Marca de agua de sincronización — ver js/core/sync.js. Se muestra tal cual
+// en Ajustes ("Última sincronización: ..."), no necesita emitir 'prefs:changed'
+// porque la propia pantalla de sync se refresca a través de 'sync:status'.
+export function getLastSyncedAt() { ensureLoaded(); return cache.lastSyncedAt; }
+export async function setLastSyncedAt(iso) {
+  cache.lastSyncedAt = iso;
+  await repo.setSetting('lastSyncedAt', iso);
+}
+
+// "¿ya se ofreció subir los datos locales a la cuenta?" — solo evita repetir
+// la pantalla de confirmación en cada inicio de sesión, no es la fuente de
+// verdad de si todo está subido (eso lo indica el tamaño de syncQueue).
+export function isLocalDataMigrated() { ensureLoaded(); return cache.localDataMigrated; }
+export async function setLocalDataMigrated(value) {
+  cache.localDataMigrated = value;
+  await repo.setSetting('localDataMigrated', value);
 }

@@ -21,8 +21,14 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
   test('crea la base de datos directamente en la última versión sin lanzar', async () => {
     const schema = await import(`../js/db/schema.js?fresh1=${Date.now()}`);
     await schema.db.exercises.toArray(); // fuerza la apertura real
-    assert.equal(schema.SCHEMA_VERSION, 12);
-    assert.equal(schema.db.verno, 12);
+    assert.equal(schema.SCHEMA_VERSION, 13);
+    assert.equal(schema.db.verno, 13);
+  });
+
+  test('la tabla "syncQueue" existe y está vacía en una instalación fresca', async () => {
+    const schema = await import(`../js/db/schema.js?freshsync=${Date.now()}`);
+    const queue = await schema.db.syncQueue.toArray();
+    assert.deepEqual(queue, []);
   });
 
   test('la tabla "bars" se siembra con 3 barras por defecto en una instalación fresca', async () => {
@@ -38,7 +44,7 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
 });
 
 describe('Actualización desde v1 (usuario con la app instalada desde el principio)', () => {
-  test('sube de v1 a v12 sin lanzar y preservando los datos ya guardados', async () => {
+  test('sube de v1 a v13 sin lanzar y preservando los datos ya guardados', async () => {
     // 1) Crea la base de datos tal cual era en v1, con datos reales de un
     // "usuario antiguo", SIN pasar por schema.js todavía.
     const oldDb = new Dexie(DB_NAME);
@@ -70,7 +76,7 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
     // ejecutando cada .upgrade() de por medio.
     const schema = await import(`../js/db/schema.js?upgrade1=${Date.now()}`);
     await schema.db.exercises.toArray();
-    assert.equal(schema.db.verno, 12);
+    assert.equal(schema.db.verno, 13);
 
     // 3) El ejercicio y el entrenamiento originales siguen ahí, intactos.
     const exercise = await schema.db.exercises.get('ex1');
@@ -80,9 +86,27 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
     assert.equal(exercise.defaultBarId, null);
     // v10 añadió isFavorite:
     assert.equal(exercise.isFavorite, false);
+    // v13: ya tenía createdAt (de antes de la migración de sync) — se conserva.
+    assert.ok(exercise.createdAt);
+    // ...pero no tenía updatedAt: se backfillea con createdAt, no se inventa otra fecha.
+    assert.equal(exercise.updatedAt, exercise.createdAt);
 
     const workout = await schema.db.workouts.get('w1');
     assert.equal(workout.date, '2025-01-01');
+    // workouts nunca tuvo createdAt en v1 — v13 lo backfillea con la hora de migración.
+    assert.ok(workout.createdAt);
+    assert.ok(workout.updatedAt);
+
+    // v13: una fila que en v1 no tenía NINGÚN timestamp (workoutExercises)
+    // también gana createdAt/updatedAt backfillados, iguales entre sí.
+    const we = await schema.db.workoutExercises.get('we1');
+    assert.ok(we.createdAt);
+    assert.equal(we.updatedAt, we.createdAt);
+
+    // v13: la cola de sincronización existe y no se ha escrito nada en ella
+    // solo por migrar el esquema — no hay sesión de Supabase en un test.
+    const queue = await schema.db.syncQueue.toArray();
+    assert.deepEqual(queue, []);
 
     // 4) La serie original (con peso/reps reales) conserva su peso/reps Y
     // gana los campos nuevos con defaults que no cambian su comportamiento.

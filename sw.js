@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fitness-tracker-v42';
+const CACHE_VERSION = 'fitness-tracker-v43';
 
 const PRECACHE_URLS = [
   './',
@@ -9,6 +9,7 @@ const PRECACHE_URLS = [
   './css/components.css',
   './js/lib/dexie.min.js',
   './js/lib/chart.umd.min.js',
+  './js/lib/supabase.min.js',
   './js/app.js',
   './js/core/store.js',
   './js/core/ui.js',
@@ -22,6 +23,11 @@ const PRECACHE_URLS = [
   './js/core/ai-import.js',
   './js/core/exercise-match.js',
   './js/core/validate.js',
+  './js/core/device.js',
+  './js/core/auth.js',
+  './js/core/sync.js',
+  './js/core/supabase-client.js',
+  './js/core/supabase-storage-adapter.js',
   './js/db/schema.js',
   './js/db/repository.js',
   './js/views/home.js',
@@ -41,6 +47,7 @@ const PRECACHE_URLS = [
   './js/views/ai-analysis.js',
   './js/views/settings-backup.js',
   './js/views/settings-hub.js',
+  './js/views/settings-account.js',
   './js/views/onboarding.js',
   './icons/icon-32.png',
   './icons/icon-180.png',

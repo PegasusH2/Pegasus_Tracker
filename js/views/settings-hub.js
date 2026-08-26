@@ -5,11 +5,23 @@ import { escapeHtml } from '../core/escape.js';
 import { toast, on } from '../core/store.js';
 import { navigate } from '../app.js';
 import { adminLogin } from '../core/ai-import.js';
+import { isSupabaseConfigured } from '../core/auth.js';
+import { getSyncStatus } from '../core/sync.js';
 
 let currentMount = null;
 on('prefs:changed', ({ key }) => {
   if (key === 'devModeUnlocked' && currentMount) render(currentMount);
 });
+on('sync:status', () => { if (currentMount) render(currentMount); });
+
+function syncSubtitle() {
+  const st = getSyncStatus();
+  if (st.state === 'syncing') return 'Sincronizando…';
+  if (st.state === 'error') return 'Error de sincronización';
+  if (st.pendingCount > 0) return `Pendiente (${st.pendingCount})`;
+  if (st.lastSyncedAt) return 'Sincronizado';
+  return 'Sin cuenta';
+}
 
 const SECTION_LABELS = {
   general: 'Progreso general',
@@ -48,6 +60,12 @@ function render(mount) {
         <span class="type-body" style="font-weight:600;">Datos</span>
         <span class="text-faint">›</span>
       </div>
+      ${isSupabaseConfigured() ? `
+        <div class="grouped-row" id="row-cuenta" style="cursor:pointer;">
+          <span class="type-body" style="font-weight:600;">Cuenta y sincronización</span>
+          <span class="text-faint">${syncSubtitle()} ›</span>
+        </div>
+      ` : ''}
       ${settings.isDevModeUnlocked() ? `
         <div class="grouped-row" id="row-dev" style="cursor:pointer;">
           <span class="type-body" style="font-weight:600;">Modo desarrollador</span>
@@ -58,7 +76,7 @@ function render(mount) {
 
     <div class="card">
       <div class="type-headline" style="margin-bottom:4px;">Aplicación</div>
-      <div class="type-caption text-faint">Pegasus Tracker · uso personal, sin cuentas ni servidores. Tus datos viven solo en este dispositivo.</div>
+      <div class="type-caption text-faint">Pegasus Tracker · tus datos viven en este dispositivo. La sincronización con la nube es opcional y solo se activa si creas una cuenta.</div>
     </div>
   `;
 
@@ -66,6 +84,7 @@ function render(mount) {
   mount.querySelector('#row-pesos').addEventListener('click', () => openPesosSheet());
   mount.querySelector('#row-personalizar').addEventListener('click', () => openPersonalizarSheet());
   mount.querySelector('#row-datos').addEventListener('click', () => navigate('/ajustes/datos'));
+  mount.querySelector('#row-cuenta')?.addEventListener('click', () => navigate('/ajustes/cuenta'));
   mount.querySelector('#row-dev')?.addEventListener('click', () => openDevModeSheet(mount));
 }
 

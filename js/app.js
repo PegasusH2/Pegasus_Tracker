@@ -14,10 +14,12 @@ import { renderSkinfold } from './views/skinfold.js';
 import { renderAiAnalysis } from './views/ai-analysis.js';
 import { renderSettingsBackup } from './views/settings-backup.js';
 import { renderSettingsHub } from './views/settings-hub.js';
+import { renderSettingsAccount } from './views/settings-account.js';
 import { hasExistingUserData, runOnboarding } from './views/onboarding.js';
 import { NAV_ICONS } from './core/ui.js';
 import { on, toast } from './core/store.js';
 import * as settings from './core/settings.js';
+import { initSync } from './core/sync.js';
 
 const ALL_TABS = [
   { key: 'home', label: 'Inicio', icon: NAV_ICONS.home, path: '/home' },
@@ -88,6 +90,7 @@ function matchRoute(segments) {
   if (root === 'ajustes') {
     if (!sub) return { view: renderSettingsHub, tab: 'ajustes' };
     if (sub === 'datos') return { view: renderSettingsBackup, tab: 'ajustes' };
+    if (sub === 'cuenta') return { view: renderSettingsAccount, tab: 'ajustes' };
   }
 
   if (root === 'datos') return { view: renderSettingsBackup, tab: 'ajustes' }; // alias legado
@@ -211,4 +214,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   // ya existan cuando llegue el primer hashchange real.
   window.addEventListener('hashchange', renderRoute);
   renderRoute();
+
+  // No se espera (fire-and-forget): si no hay Supabase configurado o no hay
+  // sesión, no hace nada; si la hay, sincroniza en segundo plano sin retrasar
+  // el primer render de la app (offline-first — la UI nunca depende de esto).
+  initSync();
 });

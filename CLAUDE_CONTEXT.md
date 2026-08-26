@@ -12,8 +12,9 @@
 ## 1. Qué es PEGASUS y objetivo de la V1
 
 PEGASUS (nombre de producto: **"Pegasus Tracker"**, antes "Fitness Tracker")
-es una aplicación web progresiva (PWA) **personal, de un solo usuario, sin
-cuentas ni backend propio**, para:
+es una aplicación web progresiva (PWA) **offline-first, sin backend de
+aplicación propio**, con cuenta y sincronización cloud **opcionales** (ver
+§23), para:
 
 - Registrar entrenamientos de gimnasio (series, repeticiones, peso, RIR,
   técnicas especiales).
@@ -23,10 +24,14 @@ cuentas ni backend propio**, para:
 - Importar rutinas desde una foto (papel, pizarra, captura) usando IA
   (Gemini) a través de un proxy propio (Cloudflare Worker).
 
-Todos los datos viven **exclusivamente en el navegador** (IndexedDB vía
-Dexie.js). No hay servidor de aplicación, no hay sincronización entre
-dispositivos, no hay login. El único servicio externo es el Worker de IA,
-usado solo para la función de importación por foto.
+Todos los datos viven **siempre** en el navegador (IndexedDB vía Dexie.js) —
+eso no ha cambiado. Desde §23, si el usuario crea una cuenta (email +
+contraseña, Supabase Auth), esos mismos datos además se sincronizan entre
+sus dispositivos; sin cuenta, la app funciona exactamente igual que antes
+(modo local puro). No hay servidor de aplicación propio: Supabase es un
+backend gestionado (Postgres + Auth + RLS), y el Worker de Cloudflare sigue
+siendo, aparte, el único servicio usado para la importación por foto —
+ambos son independientes entre sí, no comparten código ni estado.
 
 El objetivo de "V1" (según el propio código y comentarios, no hay un
 documento de producto separado en el repo) parece ser: una app instalable,
@@ -799,9 +804,15 @@ repo):
 - **El color de `.icon-badge` es identidad/categoría, nunca "bueno/malo"**
   — esa semántica de estado es exclusiva de `.progress-callout` y
   similares.
-- **Sin cuentas, sin backend de aplicación propio** — toda la persistencia
-  de datos de usuario es local (IndexedDB); el único servicio externo es el
-  proxy de IA, y solo para la función de importación por foto.
+- **IndexedDB sigue siendo la fuente de verdad local, siempre** — ninguna
+  escritura de usuario puede depender de la red ni de que Supabase esté
+  disponible (offline-first real, ver §23). La cuenta/sincronización es una
+  capa añadida, opcional; el proxy de IA sigue siendo, aparte, el único
+  servicio externo usado para la importación por foto — no mezclar ambos.
+- **`SUPABASE_SERVICE_ROLE_KEY` nunca en el frontend ni en el repo** — la
+  única clave que puede vivir en `js/core/supabase-client.js` es la "anon
+  key" pública; la seguridad real de los datos la da RLS en Postgres
+  (`supabase/schema.sql`), nunca un `WHERE user_id = ...` escrito en JS.
 - **Una serie (`sets.done`) nunca se marca como realizada automáticamente**
   — solo cuando el usuario toca el check a mano, aunque el peso/reps ya
   vengan rellenados (p. ej. al copiar la última sesión al empezar una
@@ -842,9 +853,12 @@ por lectura directa del código, no inferido):
 - **Edición de target por ejercicio dentro del asistente manual de
   rutinas** (`routine-wizard.js`) — el Paso 3 no permite editar/ver el
   target real configurado por ejercicio.
-- **Sincronización entre dispositivos / cuentas de usuario** — no existe
-  ningún mecanismo de este tipo; los datos son puramente locales al
-  navegador/dispositivo.
+- ~~Sincronización entre dispositivos / cuentas de usuario~~ — **implementado
+  en §23** (Supabase, offline-first, opcional). Lo que sigue sin existir
+  dentro de esto: Google/Apple Sign-In (solo email+contraseña), limpieza
+  física automática de tombstones antiguos en Postgres, y una UI de
+  resolución de conflictos manual (la resolución es automática por
+  `updated_at`, sin intervención del usuario).
 - **Selector manual de tema claro/oscuro** — el tema sigue únicamente
   `prefers-color-scheme` del sistema; no hay un toggle en la app.
 - **Logger estructurado** (`logger.debug/info/warn/error` con nivel
@@ -1197,6 +1211,80 @@ sección.
 
 ---
 
+## 23. Sincronización cloud (Supabase) — offline-first, opcional
+
+Fase añadida sobre la arquitectura local existente, no una reconstrucción.
+Diseño completo en `docs/supabase-sync-design.md`; resumen operativo aquí.
+
+**Arquitectura**: `Views → Core → Repository → Dexie` (sin cambios) más una
+rama nueva `Repository → syncQueue (outbox) → js/core/sync.js → Supabase`.
+Toda escritura se completa en IndexedDB primero, siempre — la sincronización
+nunca es una condición para que un guardado tenga éxito.
+
+**Alcance**: 11 tablas sincronizadas (`js/db/schema.js:SYNCED_TABLES`) —
+`exercises`, `workouts`, `workoutExercises`, `sets`, `templates`,
+`templateExercises`, `bodyWeight`, `measurementTypes`, `measurements`,
+`skinfoldSites`, `skinfoldEntries`. `bars` y `settings` quedan fuera
+(locales al dispositivo/gimnasio).
+
+**Esquema**: `js/db/schema.js` en v13 (`createdAt`/`updatedAt` en las 11
+tablas + tabla `syncQueue`). Los deletes locales siguen siendo físicos; el
+tombstoning cross-device vive en Supabase (`deleted_at`).
+
+**IDs**: ya eran UUID (`crypto.randomUUID()`) en las 13 tablas desde antes
+de esta fase — no hizo falta ninguna migración de claves primarias.
+
+**Archivos nuevos**: `js/core/device.js`, `js/core/supabase-client.js`,
+`js/core/supabase-storage-adapter.js`, `js/core/auth.js`, `js/core/sync.js`,
+`js/views/settings-account.js`, `js/lib/supabase.min.js` (vendorizado, UMD
+de `@supabase/supabase-js`, igual patrón que Dexie/Chart.js),
+`supabase/schema.sql`, `tests/sync.test.js`, `docs/supabase-sync-design.md`.
+
+**Archivos modificados**: `js/db/schema.js` (v13), `js/db/repository.js`
+(outbox instrumentado en los ~45 puntos de escritura de las 11 tablas),
+`js/app.js` (boot llama a `sync.initSync()`), `js/core/settings.js`
+(`deviceId`/`lastSyncedAt`/`localDataMigrated`), `js/views/settings-hub.js`
+(fila nueva, solo visible si hay Supabase configurado),
+`tests/schema-migrations.test.js` (v13), `index.html` (script de
+`supabase.min.js`), `sw.js` (precache + `CACHE_VERSION` a v43).
+
+**Estado real de configuración**: `js/core/supabase-client.js` tiene
+`SUPABASE_URL`/`SUPABASE_ANON_KEY` **vacíos por defecto** — hasta que el
+usuario cree su propio proyecto Supabase, ejecute `supabase/schema.sql` y
+rellene esos dos valores, la fila "Cuenta y sincronización" de Ajustes
+permanece oculta y toda la app se comporta exactamente igual que antes de
+esta fase (mismo patrón que `WORKER_URL` en `js/core/ai-import.js`).
+
+**Verificación realizada**: 105 tests automatizados en verde (92 previos +
+13 nuevos de `tests/sync.test.js`, contra un Supabase simulado en memoria —
+compactación de cola, cascada de tombstones, subida/bajada, dispositivo
+nuevo, conflictos, backoff, migración). Verificado además en un navegador
+real que la transacción más grande del código (`startWorkoutFromTemplate`,
+ahora con `db.syncQueue` añadida a su lista de tablas) sigue sin lanzar
+`PrematureCommitError`.
+
+### Riesgos/pendientes conocidos de esta fase
+
+- RLS en Postgres (aislamiento real entre usuarios) solo puede verificarse
+  contra un proyecto Supabase real — no hay forma de probarlo con
+  `fake-indexeddb`/Node. Igual para el caso de dos dispositivos físicos.
+- `bars` no sincroniza — si se borra una barra en un dispositivo,
+  `exercises.defaultBarId` no se limpia vía sync en los demás (cada
+  dispositivo gestiona sus propias barras, es una limitación conocida y
+  aceptada, no un bug).
+- `importAllData`/`clearAllData` (restaurar/borrar backup JSON) no
+  interactúan con `syncQueue` — restaurar un backup mientras hay sesión
+  activa no se sincroniza automáticamente; recomendado cerrar sesión antes,
+  o pulsar "Sincronizar ahora" después de revisar los datos restaurados.
+- No hay limpieza física de tombstones antiguos en Postgres (solo
+  `deleted_at`, para siempre) — aceptable para el volumen de datos de una
+  app de uso personal, pendiente si algún día hiciera falta.
+- La resolución de conflictos es automática (por `updated_at` del
+  servidor) — no hay UI para que el usuario elija manualmente entre dos
+  versiones en conflicto.
+
+---
+
 *Fin del documento. Generado a partir de lectura directa del código del
 repositorio — sin inventar comportamiento no verificado. Actualizado tras
-la fase de endurecimiento técnico (§22).*
+la fase de sincronización cloud con Supabase (§23).*

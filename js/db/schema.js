@@ -330,7 +330,61 @@ db.version(12).stores({
   });
 });
 
-export const SCHEMA_VERSION = 12;
+// v13: sincronización entre dispositivos (Supabase). Dos cambios:
+//   1. createdAt/updatedAt en las 11 tablas sincronizables (ver
+//      docs/supabase-sync-design.md) — necesarios para poder decidir, ante
+//      un conflicto entre dos dispositivos, qué versión de una fila es más
+//      reciente. Las que ya tenían alguno de los dos (exercises/templates:
+//      createdAt; workouts: ambos) conservan su valor real; el resto se
+//      backfillea con la hora de la migración porque no hay forma de saber
+//      la fecha real de creación de datos ya existentes — no afecta a nada
+//      hoy, y a partir de aquí repository.js mantiene ambos campos al día.
+//   2. Tabla nueva `syncQueue`: cola local (outbox) de cambios pendientes de
+//      subir a Supabase. Vacía en instalaciones sin cuenta — no se escribe
+//      nada aquí si el usuario no ha iniciado sesión.
+db.version(13).stores({
+  exercises: 'id, name, muscleGroup, archived, isFavorite',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+  syncQueue: 'id, status, entity, entityId, [status+createdAt], [entity+entityId]',
+}).upgrade(async (tx) => {
+  const now = new Date().toISOString();
+  const SYNCED_TABLES = [
+    'exercises', 'workouts', 'workoutExercises', 'sets',
+    'templates', 'templateExercises', 'bodyWeight',
+    'measurementTypes', 'measurements', 'skinfoldSites', 'skinfoldEntries',
+  ];
+  for (const table of SYNCED_TABLES) {
+    await tx.table(table).toCollection().modify((row) => {
+      if (row.createdAt === undefined) row.createdAt = now;
+      if (row.updatedAt === undefined) row.updatedAt = row.createdAt ?? now;
+    });
+  }
+});
+
+export const SCHEMA_VERSION = 13;
+
+// Tablas cuyas filas se sincronizan con Supabase cuando hay sesión activa —
+// ver docs/supabase-sync-design.md para la decisión de alcance (exercises/
+// measurementTypes/skinfoldSites se incluyen aunque el prompt original no
+// las mencionara explícitamente, porque templates/measurements/skinfold
+// dependen de ellas por FK; bars y settings quedan fuera, son locales al
+// dispositivo/gimnasio).
+export const SYNCED_TABLES = [
+  'exercises', 'workouts', 'workoutExercises', 'sets',
+  'templates', 'templateExercises', 'bodyWeight',
+  'measurementTypes', 'measurements', 'skinfoldSites', 'skinfoldEntries',
+];
 
 export function newId() {
   return crypto.randomUUID();
