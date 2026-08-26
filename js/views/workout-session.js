@@ -134,12 +134,17 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
   const enabledUnits = getWeightUnitsEnabled();
   const dualUnit = enabledUnits.kg && enabledUnits.lb;
   const soloUnit = enabledUnits.kg ? 'kg' : 'lb';
+  // Unidad para campos que solo admiten UN valor a la vez (barra/discos,
+  // escalones de descendente) — no tienen espacio para un desglose kg+lb
+  // como el peso normal, así que usan la unidad activa (o la última tocada
+  // si ambas están activas).
+  const singleUnit = dualUnit ? defaultUnit : soloUnit;
   const isBarbell = exercise.equipmentType === 'barbell';
   const bars = isBarbell ? await repo.listBars() : [];
 
-  const completedCurrentSets = currentSets.filter((s) => s.weight != null && s.reps != null);
+  const completedCurrentSets = currentSets.filter((s) => s.done);
   const comparison = (completedCurrentSets.length && lastSets.length)
-    ? compareSessions(currentSets, lastSets, { compareVolume: currentSets.length >= lastSets.length, unit: defaultUnit, loadMode: exercise.loadMode })
+    ? compareSessions(completedCurrentSets, lastSets, { compareVolume: currentSets.length >= lastSets.length, unit: defaultUnit, loadMode: exercise.loadMode })
     : null;
 
   const history = await repo.getExerciseHistory(exerciseId);
@@ -159,7 +164,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
         ${lastSets.map((s) => `
           <div class="last-session-set">
             <span class="set-idx num">${s.setNumber}</span>
-            <span class="num">${weightSummary(s, defaultUnit)} × ${s.reps ?? '—'}</span>
+            <span class="num">${weightSummary(s)} × ${s.reps ?? '—'}</span>
             <span class="text-faint">${[s.rir != null ? `RIR ${s.rir}` : '', s.type && s.type !== 'normal' ? setTypeLabel(s.type).toUpperCase() : ''].filter(Boolean).join(' · ')}</span>
           </div>
         `).join('') || '<span class="last-session-empty">Sin series registradas</span>'}
@@ -176,7 +181,8 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
 
   const setsList = card.querySelector('.sets-list');
   setsList.innerHTML = currentSets.map((s) => {
-    const done = s.weight != null && s.reps != null;
+    const done = s.done === true;
+    const canMarkDone = s.weight != null && s.reps != null;
     const soloVal = s.weight != null ? roundForDisplay(toUnit(s.weight, soloUnit), 1) : '';
     const type = s.type ?? 'normal';
     const rangeDone = checkRangeCompletion(s, workoutExercise);
@@ -199,12 +205,12 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       ${isBarbell ? `
         <div class="set-field set-weight-dual">
           <div class="set-weight-col">
-            <input type="number" inputmode="decimal" step="0.5" class="input-bar-weight" value="${s.barWeightKg ?? ''}" placeholder="0" />
-            <span class="set-unit">barra</span>
+            <input type="number" inputmode="decimal" step="${inputStep(singleUnit, 'set')}" class="input-bar-weight" value="${s.barWeightKg != null ? roundForDisplay(toUnit(s.barWeightKg, singleUnit), 1) : ''}" placeholder="0" />
+            <span class="set-unit">barra ${singleUnit}</span>
           </div>
           <div class="set-weight-col">
-            <input type="number" inputmode="decimal" step="0.5" class="input-plates" value="${s.plateWeightPerSideKg ?? ''}" placeholder="0" />
-            <span class="set-unit">disco/lado</span>
+            <input type="number" inputmode="decimal" step="${inputStep(singleUnit, 'set')}" class="input-plates" value="${s.plateWeightPerSideKg != null ? roundForDisplay(toUnit(s.plateWeightPerSideKg, singleUnit), 1) : ''}" placeholder="0" />
+            <span class="set-unit">disco ${singleUnit}</span>
           </div>
         </div>
       ` : dualUnit ? `
@@ -232,7 +238,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
         <input type="number" inputmode="numeric" min="0" max="10" class="input-rir" value="${s.rir ?? ''}" placeholder="—" />
         <span class="set-unit">RIR</span>
       </div>
-      <span class="set-check ${done ? 'done' : ''}">${CHECK_ICON}</span>
+      <button type="button" class="set-check ${done ? 'done' : ''} ${!done && !canMarkDone ? 'set-check--disabled' : ''}" data-set-id="${s.id}" aria-label="${done ? 'Marcar como no realizada' : 'Marcar como realizada'}">${CHECK_ICON}</button>
       <button class="set-remove">✕</button>
     </div>
     ${(dualUnit || isBarbell) && s.weight != null ? `
@@ -240,7 +246,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
         Total <button type="button" class="set-total-toggle" data-weight-kg="${s.weight}" data-unit="${defaultUnit}">${formatTotal(s.weight, defaultUnit)}</button>
       </div>
     ` : ''}
-    ${renderSetExtraBlock(s)}
+    ${renderSetExtraBlock(s, singleUnit)}
     </div>
   `;
   }).join('');
@@ -280,8 +286,10 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       const current = currentSets.find((s) => s.id === setId);
       const steps = (current.dropSteps ?? []).map((s) => ({ ...s }));
       const idx = Number(e.target.dataset.idx);
-      const field = e.target.classList.contains('set-step-weight') ? 'weight' : 'reps';
-      steps[idx] = { ...steps[idx], [field]: e.target.value === '' ? null : Number(e.target.value) };
+      const isWeight = e.target.classList.contains('set-step-weight');
+      const raw = e.target.value;
+      const value = raw === '' ? null : (isWeight ? toKg(raw, singleUnit) : Number(raw));
+      steps[idx] = { ...steps[idx], [isWeight ? 'weight' : 'reps']: value };
       await repo.updateSet(setId, { dropSteps: steps });
       await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
     });
@@ -321,7 +329,22 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       const barWeightKg = e.target.value === '' ? null : Number(e.target.value);
       const plateWeightPerSideKg = current.plateWeightPerSideKg ?? null;
       const weight = barWeightKg == null && plateWeightPerSideKg == null ? null : (barWeightKg ?? 0) + 2 * (plateWeightPerSideKg ?? 0);
-      await repo.updateSet(setId, { weight, barWeightKg, plateWeightPerSideKg });
+      const changes = { weight, barWeightKg, plateWeightPerSideKg };
+      if (weight == null) changes.done = false;
+      await repo.updateSet(setId, changes);
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+    });
+  });
+
+  setsList.querySelectorAll('.set-check').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const setId = btn.dataset.setId;
+      const current = currentSets.find((s) => s.id === setId);
+      if (!current.done && (current.weight == null || current.reps == null)) {
+        toast('Indica peso y repeticiones antes de marcarla como realizada');
+        return;
+      }
+      await repo.updateSet(setId, { done: !current.done });
       await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
     });
   });
@@ -348,10 +371,10 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
         const barRaw = barWeightInput.value;
         const platesRaw = platesInput.value;
         if (barRaw === '' && platesRaw === '') {
-          await repo.updateSet(setId, { weight: null, barWeightKg: null, plateWeightPerSideKg: null });
+          await repo.updateSet(setId, { weight: null, barWeightKg: null, plateWeightPerSideKg: null, done: false });
         } else {
-          const barWeightKg = barRaw === '' ? 0 : Number(barRaw);
-          const plateWeightPerSideKg = platesRaw === '' ? 0 : Number(platesRaw);
+          const barWeightKg = barRaw === '' ? 0 : toKg(barRaw, singleUnit);
+          const plateWeightPerSideKg = platesRaw === '' ? 0 : toKg(platesRaw, singleUnit);
           const weight = barWeightKg + 2 * plateWeightPerSideKg;
           await repo.updateSet(setId, { weight, barWeightKg: barRaw === '' ? null : barWeightKg, plateWeightPerSideKg: platesRaw === '' ? null : plateWeightPerSideKg });
         }
@@ -366,7 +389,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
         const kgRaw = kgPartInput.value;
         const lbRaw = lbPartInput.value;
         if (kgRaw === '' && lbRaw === '') {
-          await repo.updateSet(setId, { weight: null, weightKgPart: null, weightLbPart: null });
+          await repo.updateSet(setId, { weight: null, weightKgPart: null, weightLbPart: null, done: false });
         } else {
           const kgPart = kgRaw === '' ? 0 : Number(kgRaw);
           const lbPart = lbRaw === '' ? 0 : Number(lbRaw);
@@ -381,14 +404,18 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       soloInput.addEventListener('blur', async (e) => {
         const raw = e.target.value;
         const value = raw === '' ? null : toKg(raw, soloUnit);
-        await repo.updateSet(setId, { weight: value, weightKgPart: null, weightLbPart: null });
+        const changes = { weight: value, weightKgPart: null, weightLbPart: null };
+        if (value == null) changes.done = false;
+        await repo.updateSet(setId, changes);
         await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
       });
     }
 
     row.querySelector('.input-reps').addEventListener('blur', async (e) => {
       const value = e.target.value === '' ? null : Number(e.target.value);
-      await repo.updateSet(setId, { reps: value });
+      const changes = { reps: value };
+      if (value == null) changes.done = false;
+      await repo.updateSet(setId, changes);
       await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
     });
     row.querySelector('.input-rir').addEventListener('blur', async (e) => {
@@ -444,17 +471,18 @@ function formatTotal(weightKg, unit) {
   return `${n} ${unit}`;
 }
 
-// Para "última sesión": si la serie combinaba kg+lb, muestra el desglose real
-// (ej. "10 kg + 2,5 lb"); si no, el total simple en la unidad por defecto.
-function weightSummary(s, defaultUnit) {
+// Para "última sesión": siempre en kg Y lb a la vez (aunque solo tengas una
+// unidad activa en Ajustes) — así puedes replicar el peso directamente sin
+// tener que hacer la conversión mental según qué placas tenga el gimnasio.
+function weightSummary(s) {
   if (s.weight == null) return '—';
   if (s.barWeightKg != null || s.plateWeightPerSideKg != null) {
-    return `${formatTotal(s.weight, 'kg')} (${s.barWeightKg ?? 0}+${s.plateWeightPerSideKg ?? 0}×2)`;
+    return `${formatTotal(s.weight, 'kg')} (${roundForDisplay(s.barWeightKg ?? 0, 1)}+${roundForDisplay(s.plateWeightPerSideKg ?? 0, 1)}×2) · ${formatTotal(s.weight, 'lb')}`;
   }
   if (s.weightKgPart != null && s.weightLbPart != null) {
     return `${s.weightKgPart} kg + ${s.weightLbPart} lb`;
   }
-  return formatTotal(s.weight, defaultUnit);
+  return `${formatTotal(s.weight, 'kg')} · ${formatTotal(s.weight, 'lb')}`;
 }
 
 // Objetivo planeado (congelado al crear la sesión desde una plantilla) — solo
@@ -503,8 +531,9 @@ function openSetTypeSheet(currentType, onSelect) {
 
 // Bloques extra de una técnica especial, más allá del bloque principal
 // (weight/reps de la propia serie): rest-pause suma reps con el mismo peso;
-// descendente añade escalones con su propio peso.
-function renderSetExtraBlock(s) {
+// descendente añade escalones con su propio peso. unit: kg o lb en la que se
+// muestran/editan los escalones (dropSteps.weight se guarda siempre en kg).
+function renderSetExtraBlock(s, unit = 'kg') {
   if (s.type === 'restpause') {
     const blocks = s.restPauseExtra ?? [];
     return `
@@ -524,7 +553,7 @@ function renderSetExtraBlock(s) {
         <div class="set-extra-steps">
           ${steps.map((step, i) => `
             <span class="set-step" data-idx="${i}">
-              <input type="number" inputmode="decimal" class="set-step-weight" data-idx="${i}" value="${step.weight ?? ''}" placeholder="kg" />
+              <input type="number" inputmode="decimal" class="set-step-weight" data-idx="${i}" value="${step.weight != null ? roundForDisplay(toUnit(step.weight, unit), 1) : ''}" placeholder="${unit}" />
               <span class="set-step-x">×</span>
               <input type="number" inputmode="numeric" class="set-step-reps" data-idx="${i}" value="${step.reps ?? ''}" placeholder="reps" />
               <button type="button" class="set-step-remove" data-idx="${i}">✕</button>

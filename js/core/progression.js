@@ -67,10 +67,10 @@ export function describeRepsTarget(we) {
 export function checkRangeCompletion(set, we) {
   if (!we || !set) return false;
   if ((set.type ?? 'normal') !== 'normal') return false;
-  // La serie debe estar realmente registrada (peso + reps), no solo prellenada
-  // con el objetivo al copiar la plantilla — si no, cualquier serie vacía
-  // "completaría el rango" con las reps de plantilla sin haberse hecho.
-  if (set.weight == null || set.reps == null) return false;
+  // La serie debe estar confirmada a mano (done), no solo prellenada con el
+  // objetivo/histórico al copiar la plantilla — si no, cualquier serie recién
+  // creada "completaría el rango" con datos que nadie ha confirmado todavía.
+  if (!set.done) return false;
   const sequence = Array.isArray(we.targetRepsSequence) && we.targetRepsSequence.length ? we.targetRepsSequence : null;
   const target = sequence ? (sequence[set.setNumber - 1] ?? sequence[sequence.length - 1]) : we.targetRepsMax;
   if (target == null) return false;

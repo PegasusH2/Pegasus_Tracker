@@ -131,9 +131,14 @@
   align-items: center;
   justify-content: center;
   border: 1.5px solid var(--border);
+  background: transparent;
   color: transparent;
+  padding: 0;
+  cursor: pointer;
+  min-height: unset;
 }
 .set-check.done { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.set-check--disabled { opacity: 0.4; }
 .set-check svg { width: 12px; height: 12px; }
 
 .set-remove {

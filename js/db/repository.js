@@ -368,6 +368,10 @@ export async function startWorkoutFromTemplate(templateId, { date }) {
       const plannedWeight = weightSequence ? (weightSequence[i] ?? weightSequence[weightSequence.length - 1]) : null;
       await addSet(we.id, {
         weight: lastSets[i]?.weight ?? plannedWeight,
+        weightKgPart: lastSets[i]?.weightKgPart ?? null,
+        weightLbPart: lastSets[i]?.weightLbPart ?? null,
+        barWeightKg: lastSets[i]?.barWeightKg ?? null,
+        plateWeightPerSideKg: lastSets[i]?.plateWeightPerSideKg ?? null,
         reps: lastSets[i]?.reps ?? plannedReps,
         type: usesSpecialType ? defaultSetType : 'normal',
         restPauseExtra: usesSpecialType && defaultSetType === 'restpause' ? te.defaultRestPauseExtra : null,
@@ -410,6 +414,10 @@ export async function addSet(workoutExerciseId, values = {}) {
     barWeightKg: values.barWeightKg ?? null,
     plateWeightPerSideKg: values.plateWeightPerSideKg ?? null,
     addedWeightKg: values.addedWeightKg ?? null,
+    // Confirmación manual de que la serie se realizó de verdad — nunca se
+    // marca sola por tener peso/reps rellenados (p.ej. al copiar la última
+    // sesión al empezar una rutina), solo cuando el usuario toca el check.
+    done: values.done ?? false,
   };
   await db.sets.add(set);
   return set;

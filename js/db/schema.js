@@ -302,7 +302,35 @@ db.version(11).stores({
   });
 });
 
-export const SCHEMA_VERSION = 11;
+// v12: confirmación manual de serie realizada ("done"). Antes, una serie se
+// consideraba "hecha" solo por tener weight+reps — pero al empezar una
+// rutina esos campos ya vienen prellenados con el histórico, así que
+// aparecían como realizadas sin que el usuario hubiera hecho nada todavía.
+// Ahora hace falta confirmarlo a mano (tocar el check). Para no perder el
+// histórico ya registrado, las series EXISTENTES que ya tenían weight+reps
+// se marcan done=true en la migración (son entrenos reales del pasado); las
+// que no tenían datos quedan en false, igual que antes.
+db.version(12).stores({
+  exercises: 'id, name, muscleGroup, archived, isFavorite',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+}).upgrade(async (tx) => {
+  await tx.table('sets').toCollection().modify((s) => {
+    if (s.done === undefined) s.done = s.weight != null && s.reps != null;
+  });
+});
+
+export const SCHEMA_VERSION = 12;
 
 export function newId() {
   return crypto.randomUUID();

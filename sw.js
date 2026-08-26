@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fitness-tracker-v40';
+const CACHE_VERSION = 'fitness-tracker-v41';
 
 const PRECACHE_URLS = [
   './',
