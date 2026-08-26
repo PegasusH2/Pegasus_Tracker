@@ -164,10 +164,15 @@ async function renderRoute() {
   const segments = parseHash();
   const match = matchRoute(segments);
   const view = document.getElementById('view');
+  const bottomNav = document.getElementById('bottom-nav');
+  // Guardia: un hashchange puede dispararse antes de que renderShell() haya
+  // creado #view/#bottom-nav (p.ej. durante la carga inicial) — sin esto,
+  // `view.innerHTML = ''` lanza "Cannot set properties of null".
+  if (!view || !bottomNav) return;
   view.innerHTML = '';
   view.scrollTop = 0;
 
-  document.getElementById('bottom-nav').style.display = match.focusMode ? 'none' : '';
+  bottomNav.style.display = match.focusMode ? 'none' : '';
   view.classList.toggle('view--focus', !!match.focusMode);
   currentTab = match.tab;
   if (!match.focusMode) renderBottomNav(match.tab);
@@ -190,7 +195,6 @@ async function renderRoute() {
   }
 }
 
-window.addEventListener('hashchange', renderRoute);
 window.addEventListener('DOMContentLoaded', async () => {
   await settings.loadSettingsCache();
   if (!settings.isOnboardingCompleted()) {
@@ -203,5 +207,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   }
   renderShell();
+  // El listener se registra DESPUÉS de renderShell() para que #view/#bottom-nav
+  // ya existan cuando llegue el primer hashchange real.
+  window.addEventListener('hashchange', renderRoute);
   renderRoute();
 });

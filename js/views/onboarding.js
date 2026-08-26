@@ -90,15 +90,23 @@ export function runOnboarding() {
         app.querySelectorAll('#ob-unit-toggle .seg').forEach((b) => b.classList.toggle('active', b === btn));
         app.querySelector('#ob-weight-unit').textContent = state.weightUnit;
       });
-      app.querySelector('#ob-finish').addEventListener('click', async () => {
+      app.querySelector('#ob-finish').addEventListener('click', async (e) => {
         const raw = app.querySelector('#ob-weight').value;
         const weightKg = toKg(raw, state.weightUnit);
         if (!weightKg || weightKg <= 0) { toast('Introduce tu peso para continuar'); return; }
 
-        await repo.addBodyWeight({ date: todayISO(), weightKg });
-        await settings.setUserName(state.name);
-        await settings.setOnboardingCompleted(true);
-        resolve();
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          await repo.addBodyWeight({ date: todayISO(), weightKg });
+          await settings.setUserName(state.name);
+          await settings.setOnboardingCompleted(true);
+          resolve();
+        } catch (err) {
+          console.error('Error al finalizar el onboarding', err);
+          toast('No se ha podido guardar. Inténtalo de nuevo.');
+          btn.disabled = false;
+        }
       });
     }
   });

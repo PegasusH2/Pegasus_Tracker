@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fitness-tracker-v41';
+const CACHE_VERSION = 'fitness-tracker-v42';
 
 const PRECACHE_URLS = [
   './',
@@ -21,6 +21,7 @@ const PRECACHE_URLS = [
   './js/core/units.js',
   './js/core/ai-import.js',
   './js/core/exercise-match.js',
+  './js/core/validate.js',
   './js/db/schema.js',
   './js/db/repository.js',
   './js/views/home.js',
@@ -98,7 +99,12 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match('./index.html'));
+        // El fallback a index.html solo tiene sentido para una NAVEGACIÓN sin
+        // conexión (mostrar la app en vez de una pantalla de error) — si se
+        // aplica a cualquier GET fallido (un JS, una imagen...), un fallo de
+        // red real en un módulo se disfraza de "aquí tienes el HTML" en vez
+        // de un error claro, y revienta luego como "Unexpected token '<'".
+        .catch(() => (event.request.mode === 'navigate' ? caches.match('./index.html') : Response.error()));
     })
   );
 });

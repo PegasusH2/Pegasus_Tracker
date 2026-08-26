@@ -205,26 +205,39 @@ function openWeightForm(mount, existing) {
         sheet.querySelectorAll('#f-unit-toggle .seg').forEach((b) => b.classList.toggle('active', b === btn));
       });
 
-      sheet.querySelector('#f-save').addEventListener('click', async () => {
+      sheet.querySelector('#f-save').addEventListener('click', async (e) => {
         const date = sheet.querySelector('#f-date').value;
         const weightKg = toKg(weightInput.value, formUnit);
         const notes = sheet.querySelector('#f-notes').value.trim();
         if (!date || !weightKg) { toast('Fecha y peso son obligatorios'); return; }
-        if (isEdit) {
-          await repo.updateBodyWeight(existing.id, { date, weightKg, notes });
-        } else {
-          await repo.addBodyWeight({ date, weightKg, notes });
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          if (isEdit) {
+            await repo.updateBodyWeight(existing.id, { date, weightKg, notes });
+          } else {
+            await repo.addBodyWeight({ date, weightKg, notes });
+          }
+          await setWeightLastInputUnit(formUnit);
+          close();
+          await renderBodyWeight(mount);
+        } catch (err) {
+          console.error('Error al guardar el peso', err);
+          toast('No se ha podido guardar. Inténtalo de nuevo.');
+          btn.disabled = false;
         }
-        await setWeightLastInputUnit(formUnit);
-        close();
-        await renderBodyWeight(mount);
       });
       sheet.querySelector('#f-delete')?.addEventListener('click', async () => {
         close();
         const ok = await openConfirmSheet('¿Eliminar este registro de peso?', { confirmLabel: 'Eliminar' });
         if (!ok) return;
-        await repo.deleteBodyWeight(existing.id);
-        await renderBodyWeight(mount);
+        try {
+          await repo.deleteBodyWeight(existing.id);
+          await renderBodyWeight(mount);
+        } catch (err) {
+          console.error('Error al eliminar el peso', err);
+          toast('No se ha podido eliminar el registro.');
+        }
       });
     },
   });

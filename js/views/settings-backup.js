@@ -104,7 +104,8 @@ export async function renderSettingsBackup(mount) {
       );
       if (!ok || totalCount === 0) { progressFileInput.value = ''; return; }
       const result = await repo.importProgressData(data);
-      toast(`Añadido: ${result.bodyWeight} peso, ${result.measurements} medidas, ${result.skinfold} plicómetro`);
+      const skippedText = result.skipped ? ` (${result.skipped} filas omitidas por datos inválidos)` : '';
+      toast(`Añadido: ${result.bodyWeight} peso, ${result.measurements} medidas, ${result.skinfold} plicómetro${skippedText}`);
       navigate('/progreso');
     } catch (err) {
       console.error(err);
@@ -119,8 +120,15 @@ export async function renderSettingsBackup(mount) {
   deleteBtn.addEventListener('click', async () => {
     const ok = await openConfirmSheet('Última confirmación: se borrarán TODOS tus datos de este dispositivo. ¿Continuar?', { confirmLabel: 'Borrar todo' });
     if (!ok) return;
-    await repo.clearAllData();
-    toast('Todos los datos han sido borrados');
-    navigate('/home');
+    deleteBtn.disabled = true;
+    try {
+      await repo.clearAllData();
+      toast('Todos los datos han sido borrados');
+      navigate('/home');
+    } catch (err) {
+      console.error('Error al borrar los datos', err);
+      toast('No se han podido borrar los datos. Inténtalo de nuevo.');
+      deleteBtn.disabled = !checkbox.checked;
+    }
   });
 }

@@ -100,20 +100,28 @@ estado actual del código, no de una especificación escrita.
 │   │   ├── stats.js                estadísticas (1RM, PRs, tendencias, %grasa)
 │   │   ├── skinfold-points.js      puntos/lógica de plicómetro
 │   │   ├── exercise-match.js       fuzzy-matching de nombres de ejercicio (Levenshtein)
-│   │   └── ai-import.js            cliente de importación por foto (llama al Worker)
+│   │   ├── ai-import.js            cliente de importación por foto (llama al Worker)
+│   │   └── validate.js             validación pura en el borde repository.js↔Dexie (§22)
 │   ├── db/
 │   │   ├── schema.js               definición Dexie + migraciones versionadas
 │   │   └── repository.js           TODO el CRUD de la app
 │   └── views/                     18 archivos, uno por pantalla/subpantalla (ver §13)
-└── worker/
-    ├── index.js                    Cloudflare Worker (proxy a Gemini)
-    ├── wrangler.toml                config de despliegue del Worker
-    └── README.md                    instrucciones de despliegue del Worker
+├── worker/
+│   ├── index.js                    Cloudflare Worker (proxy a Gemini)
+│   ├── wrangler.toml                config de despliegue del Worker
+│   └── README.md                    instrucciones de despliegue del Worker
+├── tests/                          tests automatizados (§22) — node:test + fake-indexeddb
+└── package.json                    SOLO devDependencies de test, no se despliega (§22)
 ```
 
-No existe carpeta `tests/`, ni `.claude/skills` de proyecto, ni CI propio
-más allá del pipeline nativo de GitHub Pages. Existe `.claude/launch.json`
-(ver §20).
+No existe `.claude/skills` de proyecto, ni CI propio más allá del pipeline
+nativo de GitHub Pages. Existe `.claude/launch.json` (ver §20). El
+`package.json` de la raíz es exclusivamente para la infraestructura de
+tests (§22) — la app en sí sigue sin build step ni bundler.
+`scripts/package.json` (`{"type":"commonjs"}`) existe para que
+`scripts/static-server.js` (script CJS local, fuera de git) siga
+funcionando pese al `"type":"module"` del `package.json` raíz — no lo
+borres si tocas la infraestructura de tests.
 
 ---
 
@@ -143,10 +151,11 @@ lo requiere para un Worker de un solo archivo sin dependencias npm).
 ## 5. Modelo de datos actual
 
 Basado en [js/db/schema.js](js/db/schema.js). Versión de esquema actual:
-**`SCHEMA_VERSION = 11`**. Todas las migraciones (v1→v11) son **aditivas y
+**`SCHEMA_VERSION = 12`**. Todas las migraciones (v1→v12) son **aditivas y
 no destructivas**: nunca se elimina ni se transforma con pérdida de datos
 existentes; los campos nuevos siempre reciben un valor por defecto seguro
-mediante `.upgrade()`.
+mediante `.upgrade()`. Verificado con tests automatizados que suben una base
+de datos v1 real hasta v12 (`tests/schema-migrations.test.js`, ver §22).
 
 Tablas (stores) actuales:
 
@@ -157,8 +166,11 @@ Tablas (stores) actuales:
   Incluye (desde v9) `targetRepsSequence` / `targetWeightSequence` para
   progresiones/pirámides por serie, en paralelo al rango uniforme
   `targetRepsMin`/`targetRepsMax`.
-- **`sets`** — series individuales (reps, peso, RIR, tipo de serie, hecha/no
-  hecha, etc.).
+- **`sets`** — series individuales (reps, peso, RIR, tipo de serie, etc.).
+  Desde **v12**, `done` (booleano) indica si el usuario ha CONFIRMADO a mano
+  que la serie se realizó — nunca se marca sola solo por tener peso/reps
+  rellenados (p. ej. al copiar la última sesión al empezar una rutina). Ver
+  §22.
 - **`bodyWeight`** — registros de peso corporal.
 - **`measurementTypes`** — tipos de medida corporal definidos por el
   usuario (p. ej. "cintura", "brazo").
@@ -182,11 +194,11 @@ rango uniforme (p. ej. "8-12"), el prefill al iniciar una sesión usa el
 **límite INFERIOR** del rango (no el superior — este fue un comportamiento
 corregido explícitamente durante el desarrollo, ver §15).
 
-**Gap conocido del modelo de datos / backup**: la constante `TABLES` en
-`js/db/repository.js`, usada por `exportAllData` / `importAllData` /
-`clearAllData`, **NO incluye la tabla `bars`** (añadida en schema v8). Esto
-significa que las configuraciones de barra libre probablemente no se
-incluyen en la copia de seguridad/restauración de datos. Ver §16.
+La constante `TABLES` en `js/db/repository.js` (usada por `exportAllData` /
+`importAllData` / `clearAllData`) incluye las 12 tablas actuales, `bars`
+incluida — este era un gap real que existió durante el desarrollo y ya está
+corregido. `importAllData` además valida la forma mínima del archivo
+(`assertValidBackupStructure`, §22) antes de sustituir nada.
 
 ---
 
@@ -672,13 +684,6 @@ redesplegado exitosamente con el contenido actual de `worker/index.js`.
   cada ejercicio, sin importar el número real de series configurado, porque
   este wizard no tiene un paso de edición de target por ejercicio (a
   diferencia del sheet dedicado que sí existe en `templates.js`).
-- **Backup/restauración no incluye la tabla `bars`**: la constante `TABLES`
-  usada por `exportAllData`/`importAllData`/`clearAllData` en
-  `js/db/repository.js` no incluye `bars` (tabla de configuraciones de
-  barra libre, añadida en schema v8). Esto es una lectura directa del
-  código (`TABLES` no la lista); no se ha verificado en tiempo de
-  ejecución si el efecto real coincide exactamente con lo que el nombre de
-  la constante sugiere, pero la ausencia en la lista es clara.
 - **Token compartido del Worker de IA no es un secreto real**: tanto la
   URL del Worker como `APP_SHARED_TOKEN` están hardcodeados en texto plano
   en `js/core/ai-import.js`, servido públicamente. El propio código lo
@@ -686,8 +691,11 @@ redesplegado exitosamente con el contenido actual de `worker/index.js`.
   no como un fallo a corregir silenciosamente — pero cualquiera con acceso
   al código fuente público puede leer el token y llamar al Worker
   directamente, sujeto solo a los límites gratuitos de Gemini/Cloudflare.
-- **CORS abierto (`*`) en el Worker**: cualquier origen puede llamar al
-  endpoint si conoce la URL y el token (que es público, ver punto
+- ~~CORS abierto (`*`) en el Worker~~ — corregido (§22): `corsHeaders()`
+  ahora restringe `Access-Control-Allow-Origin` a un allowlist
+  (`ALLOWED_ORIGINS` en `worker/index.js`: el origen de producción +
+  localhost para desarrollo). Es defensa en profundidad, no la protección
+  principal — el token compartido sigue siendo público por diseño (punto
   anterior).
 - **Rate limiting por KV no es perfectamente atómico**: bajo concurrencia
   muy alta (no esperable a esta escala personal) dos peticiones casi
@@ -726,8 +734,6 @@ repo):
 - Añadir un paso de edición de target por ejercicio en el asistente manual
   de rutinas (`routine-wizard.js`), o al menos corregir el texto fijo "3
   series" del Paso 3 para reflejar el valor real configurado.
-- Incluir la tabla `bars` en el backup/restauración de datos
-  (`TABLES` en `repository.js`).
 - ~~Revisar el modelo de autenticación del Worker de IA~~ — atendido
   parcialmente: ya existe rate limiting por IP y un modo administrador con
   sesión revocable (ver §11/§18/§21). El token compartido (`APP_SHARED_TOKEN`)
@@ -796,6 +802,29 @@ repo):
 - **Sin cuentas, sin backend de aplicación propio** — toda la persistencia
   de datos de usuario es local (IndexedDB); el único servicio externo es el
   proxy de IA, y solo para la función de importación por foto.
+- **Una serie (`sets.done`) nunca se marca como realizada automáticamente**
+  — solo cuando el usuario toca el check a mano, aunque el peso/reps ya
+  vengan rellenados (p. ej. al copiar la última sesión al empezar una
+  rutina). `checkRangeCompletion` y las comparaciones de progresión respetan
+  esto. Ver §22 — esto corrigió un bug real donde toda sesión nueva aparecía
+  "ya hecha" sin que el usuario hubiera hecho nada.
+- **`repository.js` es el único punto de validación de escritura** — toda
+  función de escritura pasa por `js/core/validate.js` en el borde antes de
+  tocar Dexie (fechas, nombres obligatorios, números no negativos). No
+  añadas una vista que valide "por su cuenta" y escriba directo — el
+  contrato es que `repository.js` nunca deja pasar un dato imposible,
+  vengan de donde vengan (UI manual, backup importado, IA).
+- **Operaciones que tocan varias tablas relacionadas usan
+  `db.transaction('rw', [...], async () => {...})`**, con el cuerpo
+  DIRECTAMENTE dentro del callback — nunca delegado a una función `async`
+  aparte llamada desde el callback (esto rompe el seguimiento de "zona" de
+  Dexie y provoca `PrematureCommitError` en el navegador real, aunque
+  funcione en Node/tests; ver §22 para el caso real que lo descubrió).
+- **`deleteExercise` nunca borra el histórico** (workouts/templates que ya
+  referencian ese ejercicio) — es intencional ("no se pueden reconstruir los
+  datos históricos"). Cualquier lectura de `.exercise` tras un fetch de
+  repository debe tolerar `undefined` (`?? 'Ejercicio eliminado'`, patrón ya
+  usado en `templates.js` y `workout-session.js`) — nunca asumas que existe.
 
 ---
 
@@ -818,9 +847,9 @@ por lectura directa del código, no inferido):
   navegador/dispositivo.
 - **Selector manual de tema claro/oscuro** — el tema sigue únicamente
   `prefers-color-scheme` del sistema; no hay un toggle en la app.
-- **Tests automatizados** — no existe carpeta `tests/` ni ningún framework
-  de test configurado en el repo. Toda la verificación de esta sesión de
-  desarrollo se hizo manualmente a través de la UI real en navegador.
+- **Logger estructurado** (`logger.debug/info/warn/error` con nivel
+  desactivable en producción) — no implementado; se sigue usando
+  `console.error`/`console.warn` puntual. Ver recomendaciones V2 (§22).
 
 ---
 
@@ -860,8 +889,15 @@ No hay build step. Basta con servir los archivos estáticos:
   Worker de producción desplegado, así que las pruebas locales de
   importación por foto llaman al servicio real (sujeto a sus límites de
   cuota gratuita).
-- No hay un framework de test automatizado — toda verificación es manual,
-  vía navegador.
+- **Tests automatizados** (añadidos en la fase de endurecimiento técnico,
+  §22): `npm install` (solo una vez, instala `dexie`/`fake-indexeddb` como
+  devDependencies — SOLO para tests, no se despliegan a GitHub Pages) y
+  luego `npm test`. Cubren la lógica pura (`progression.js`, `stats.js`,
+  `units.js`, `exercise-match.js`, validación de `ai-import.js`) y, con
+  `fake-indexeddb`, las migraciones de `schema.js` y las operaciones
+  críticas de `repository.js` (transacciones, cascadas de borrado,
+  validación). La verificación de UI real sigue siendo manual, vía
+  navegador — los tests no sustituyen eso, lo complementan.
 
 ---
 
@@ -928,5 +964,239 @@ No hay build step. Basta con servir los archivos estáticos:
 
 ---
 
-*Fin del documento. Generado únicamente a partir de lectura directa del
-código del repositorio — sin modificar ningún archivo de código.*
+## 22. Technical Hardening
+
+Fase de endurecimiento técnico realizada tras una auditoría completa del
+repositorio (3 agentes de exploración en paralelo cubriendo
+integridad de datos/migraciones, vistas, y core/PWA/Worker). Objetivo
+explícito: **sin reescribir la app, sin cambiar de stack, sin tocar UX**
+salvo lo mínimo necesario para evitar un bug real o pérdida de datos.
+Prioridad seguida: **datos > estabilidad > corrección > mantenibilidad >
+rendimiento > UX**.
+
+### Arquitectura reforzada
+
+```
+VIEW → CORE → REPOSITORY (+ validate.js) → DEXIE
+```
+
+No se encontró ningún acceso directo a Dexie fuera de `repository.js`/
+`schema.js` (auditado con grep en todo `js/`) — la separación de capas ya
+era correcta, no hizo falta refactorizarla.
+
+### Validación centralizada (`js/core/validate.js`, nuevo)
+
+Funciones puras (`cleanNonNegativeNumber`, `cleanNonNegativeInt`,
+`isValidDateString`, `requireNonEmptyString`, `requirePositiveNumber`,
+`requireValidDate`). Dos familias: `clean*` sanea a `null` sin lanzar
+(campos opcionales, como el peso de una serie aún sin rellenar); `require*`
+lanza si el campo es indispensable (nombre de un ejercicio, fecha de un
+entrenamiento, peso corporal). Integrado en `repository.js`:
+`createExercise`, `createWorkout`, `createTemplate`, `createBar`,
+`createSkinfoldSite`, `createMeasurementType`, `addBodyWeight`,
+`addMeasurement`, `addSkinfoldEntry`, `addTemplateExercise` (validan/exigen
+en la creación); `addSet`/`updateSet` (sanean los campos numéricos sin
+lanzar, vía `sanitizeSetFields`) — una serie puede quedar a medio rellenar
+sin romper nada, pero nunca acepta un peso o reps negativos.
+
+**Lección de una vuelta atrás real durante esta fase**:
+`isValidDateString` se implementó primero con `new Date(v + 'T00:00:00')` +
+`toISOString()` — esto es sensible a la zona horaria del dispositivo y
+rechazaba fechas perfectamente válidas cuando la medianoche local cae al
+otro lado del día UTC. Los tests lo detectaron de inmediato. Corregido
+usando `Date.UTC(...)` + `getUTCFullYear/getUTCMonth/getUTCDate`, sin
+ninguna dependencia de la zona horaria local. **Cualquier validación de
+fecha futura debe seguir este mismo patrón UTC-explícito.**
+
+### Transacciones Dexie
+
+Envueltas en `db.transaction('rw', [tablas], async () => {...})` (mismo
+patrón que ya usaban correctamente `importAllData`/`clearAllData`, aplicado
+a más sitios): `startWorkoutFromTemplate` (crea workout + N
+workoutExercises + M sets — el flujo más usado de toda la app),
+`deleteWorkout`, `removeExerciseFromWorkout`, `deleteTemplate`,
+`deleteMeasurementType`, `deleteSkinfoldSite`, `deleteBar`, `repeatWorkout`.
+
+**Lección real #2 de esta fase**: el cuerpo de la transacción debe ir
+DIRECTAMENTE en el callback de `db.transaction(...)`, nunca delegado a una
+función `async` aparte invocada desde ahí (`() => otraFuncion(...)`).
+`startWorkoutFromTemplate` se escribió inicialmente así y funcionaba en los
+tests con `fake-indexeddb`, pero **fallaba en el navegador real** con
+`PrematureCommitError: Transaction committed too early` — Dexie solo seguía
+la "zona" de la transacción mientras el código estuviera en la misma
+cadena de promesas del callback; llamar a otra función rompía esa cadena.
+Se detectó probando manualmente en el navegador (no solo con los tests) y
+se corrigió inlineando todo el cuerpo. **Cualquier transacción nueva debe
+probarse también en el navegador real, no solo en el test con
+fake-indexeddb — no son 100% equivalentes en este punto.**
+
+`importProgressData` (importación aditiva de progreso desde spreadsheet)
+deliberadamente NO se envolvió en una única transacción — cada fila se
+intenta por separado con su propio try/catch, así que una fila con datos
+corruptos se omite (contador `skipped`) sin descartar el resto de filas
+válidas. Es la decisión correcta para una importación aditiva de muchas
+filas independientes, a diferencia de "crear una rutina completa" donde sí
+se quiere todo-o-nada.
+
+### Cascadas de borrado revisadas
+
+`deleteWorkout`, `deleteTemplate`, `deleteMeasurementType`,
+`deleteSkinfoldSite` ya limpiaban correctamente sus hijos — confirmado, sin
+cambios de lógica (solo se envolvieron en transacción). `deleteBar` ya
+limpiaba `exercises.defaultBarId` correctamente.
+
+`deleteExercise` **deliberadamente NO cascada** — nunca borra
+workouts/templates que referencian ese ejercicio (la propia UI ya avisa:
+"esto no elimina los entrenamientos pasados"). El bug real no era la falta
+de cascada, sino que `workout-session.js` leía `exercise.name` sin
+protegerse de que `exercise` pudiera ser `undefined` — causaba un
+`TypeError` real al abrir un entrenamiento pasado tras borrar uno de sus
+ejercicios. `templates.js` ya tenía la guardia correcta
+(`te.exercise?.name ?? 'Ejercicio eliminado'`); se aplicó el mismo patrón
+en `workout-session.js` (tarjeta de ejercicio completa con solo un botón
+"Quitar" cuando el ejercicio ya no existe). Auditado el resto de `.exercise.`
+sin `?.` en todo `js/` — los dos casos restantes (`home.js` "mejoras
+recientes", `routine-wizard.js` selección en vivo) están garantizados a
+existir por construcción, no necesitan la guardia.
+
+### Manejo de errores y protección contra doble envío
+
+Patrón aplicado (no un helper nuevo, el mismo patrón ya usado en
+`workout-session.js`/`settings-hub.js`): `btn.disabled = true` antes de la
+operación async, `try/catch` alrededor, `toast()` + `btn.disabled = false`
+en el `catch`. Aplicado a los botones de guardar/crear/eliminar que no lo
+tenían: `onboarding.js` (guardado final — si fallaba, un usuario nuevo se
+quedaba bloqueado para siempre sin entrar a la app), `workout-new.js`,
+`templates.js` (guardar ejercicio de rutina, guardar/eliminar rutina),
+`bodyweight.js`, `measurements.js`, `skinfold.js`, `exercise-library.js`
+(guardar/archivar/eliminar ejercicio), `settings-backup.js` (borrar todos
+los datos), `routine-wizard.js` (guardar rutina), `workout-import.js`
+(`saveProgram`).
+
+### Bugs puntuales corregidos
+
+- **XSS real**: `js/core/ui.js` (`openExercisePickerSheet`) interpolaba el
+  parámetro `title` en `innerHTML` sin `escapeHtml` — explotable con
+  `recognizedName` proveniente de una foto interpretada por IA (contenido
+  no confiable). Un único `escapeHtml(title)` lo corrige para todos los
+  llamadores.
+- **Race condition confirmada en `js/app.js`**: el listener de
+  `hashchange` se registraba ANTES de que `renderShell()` creara
+  `#view`/`#bottom-nav` — causaba el error real de consola "Cannot set
+  properties of null" visto en producción. Corregido con una guardia
+  (`if (!view || !bottomNav) return;`) y moviendo el registro del listener
+  a después de `renderShell()`.
+- **`js/core/ai-import.js` sin cota superior**: `sets`, `repsSequence`,
+  `weightSequence`, `extraReps`, `steps`, número de ejercicios por rutina,
+  número de rutinas, y `unrecognized` no tenían límite — una respuesta de
+  Gemini alucinada/desproporcionada (`sets: 999999999`) sobrevivía la
+  limpieza de tipos y podía colgar la pestaña al crear cientos de millones
+  de filas en `startWorkoutFromTemplate`. Ahora acotado
+  (`MAX_SETS_PER_EXERCISE=50`, `MAX_SEQUENCE_LENGTH=30`,
+  `MAX_EXTRA_REPS_LENGTH=30`, `MAX_DROP_STEPS_LENGTH=20`,
+  `MAX_EXERCISES_PER_ROUTINE=80`, `MAX_ROUTINES=30`,
+  `MAX_UNRECOGNIZED=100`), y los campos de cantidad rechazan negativos.
+- **`startWorkoutFromTemplate` no copiaba el desglose de barra+discos** al
+  empezar una rutina (solo el peso total) — corregido de paso al tocar esta
+  función para las transacciones.
+
+### Service Worker (`sw.js`)
+
+El fallback offline (`caches.match('./index.html')`) aplicaba a CUALQUIER
+GET fallido, no solo a navegaciones — un fallo de red real en un JS/imagen
+se disfrazaba de "aquí tienes el HTML" en vez de un error claro. Ahora
+limitado a `event.request.mode === 'navigate'`. Se añadió
+`js/core/validate.js` a `PRECACHE_URLS` (dependencia nueva de
+`repository.js`, necesaria para que funcione offline). `CACHE_VERSION`
+subida como en cada cambio.
+
+### Cloudflare Worker (`worker/index.js`)
+
+- **Timeout** de 25s (`AbortController`) en el `fetch` a Gemini — antes una
+  petición colgada corría hasta el límite de ejecución de la plataforma en
+  vez de fallar rápido con un mensaje controlado.
+- **CORS restringido** — ver §16/§18 (ya no `'*'`).
+- Preparado en código; el despliegue real (`wrangler deploy`) lo hace el
+  usuario, como siempre con este Worker — no se ha desplegado durante esta
+  sesión.
+
+### Backup/restore
+
+`importAllData` ahora valida la forma mínima del backup
+(`assertValidBackupStructure`: `data` es un objeto y contiene al menos
+`exercises`/`workouts`/`sets` como arrays) ANTES de tocar la base de datos
+actual — rechaza un JSON que claramente no es un backup de Pegasus Tracker
+sin sustituir nada. La validación fila-por-fila (¿es cada fila
+individualmente correcta?) ya la garantiza Dexie: si una fila incumple el
+esquema, `bulkAdd` lanza y la transacción entera (ya existente) se deshace
+sola, sin dejar la base a medias. `exportAllData`/`clearAllData` sin
+cambios (ya eran correctos).
+
+### Tests (nuevos — `tests/`, `package.json`)
+
+Runner: `node:test` + `node:assert` (built-in en Node ≥18, sin dependencia
+nueva para el runner). Para los módulos que dependen de IndexedDB
+(`schema.js`, `repository.js`) se añadieron **dos devDependencies SOLO de
+test** — `dexie` (mismo paquete, npm, usado como global `Dexie` para
+replicar exactamente cómo lo carga la app real) y `fake-indexeddb`
+(polyfill de `indexedDB`/`IDBKeyRange` en Node). Ninguna de las dos se
+despliega a GitHub Pages ni la carga la PWA — la app real sigue cargando
+Dexie vendorizado (`js/lib/dexie.min.js`) como script global, esto no
+cambia. `npm test` ejecuta `node --test tests/*.test.js` (el patrón de
+directorio bare `node --test tests/` da `MODULE_NOT_FOUND` en este entorno
+— usar siempre el glob explícito).
+
+91 tests, organizados en:
+- `progression.test.js`, `stats.test.js`, `units.test.js`,
+  `exercise-match.test.js`, `ai-import.test.js` — lógica pura, sin mocks.
+- `schema-migrations.test.js` — sube una base v1 real (con datos
+  sembrados a mano, replicando el `.stores()` original) hasta v12 y
+  confirma que no lanza y que los datos originales sobreviven; también
+  cubre instalación fresca.
+- `repository.test.js` — transacciones (incluye un test que simula un
+  fallo a mitad de `startWorkoutFromTemplate` y confirma que NO queda un
+  workout huérfano — rollback real), cascadas de borrado, `deleteExercise`
+  sin romper el histórico, `getLastSessionForExercise` saltando sesiones
+  vacías, validación en el borde, `importAllData`/`importProgressData`.
+- `tests/setup-db.js` — helper compartido que instala los globals
+  `Dexie`/`indexedDB` antes de importar `schema.js`/`repository.js`.
+
+Los tests de migraciones/repositorio importan `schema.js` con un query
+string distinto cada vez (`?fresh1=...`) para forzar una reevaluación real
+del módulo (y por tanto un `new Dexie(...)` nuevo) — Node cachea los
+módulos por especificador exacto, así que reimportar la misma ruta
+literal devolvería el mismo `db` singleton ya abierto.
+
+### Documentación
+
+Este archivo (`CLAUDE_CONTEXT.md`) actualizado: versión de esquema (11→12),
+gap de `bars` en backup corregido (ya no es un bug conocido), CORS
+corregido, nuevas decisiones en §18, estructura de carpetas con
+`tests/`/`package.json`/`validate.js`, mención de `npm test` en §20, y esta
+sección.
+
+### Riesgos que siguen existiendo tras esta fase (ver informe de cierre)
+
+- `saveProgram` (`workout-import.js`, guardado de un programa de varias
+  rutinas importado por IA) sigue sin transacción real — cada rutina se
+  crea por separado; un fallo a mitad deja algunas rutinas creadas y otras
+  no. Mitigado con try/catch + aviso al usuario, no con atomicidad.
+- No hay validación de existencia de claves foráneas (`exerciseId`,
+  `templateId`...) antes de insertar en la mayoría de funciones — una
+  referencia rota no se detecta hasta que algo intenta leerla.
+- Instalación fresca (usuario nuevo): la tabla `bars` NO se siembra con las
+  3 barras por defecto (el `.upgrade()` de Dexie solo corre al ACTUALIZAR
+  desde una versión anterior, no al crear una base nueva — comportamiento
+  nativo de Dexie, documentado con un test que deja constancia del
+  comportamiento real).
+- Sin logger estructurado — se sigue usando `console.error`/`console.warn`
+  puntual.
+- No se ha ejecutado ninguna auditoría de rendimiento dedicada (fuera de
+  alcance explícito de esta fase salvo problemas reales encontrados de
+  paso, y no se encontró ninguno).
+
+---
+
+*Fin del documento. Generado a partir de lectura directa del código del
+repositorio — sin inventar comportamiento no verificado. Actualizado tras
+la fase de endurecimiento técnico (§22).*

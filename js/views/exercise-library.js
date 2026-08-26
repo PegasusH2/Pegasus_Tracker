@@ -137,7 +137,7 @@ async function openExerciseForm(mount, existing) {
         sheet.querySelector('#f-load-mode-field').style.display = isBarbell ? 'none' : '';
       });
 
-      sheet.querySelector('#f-save').addEventListener('click', async () => {
+      sheet.querySelector('#f-save').addEventListener('click', async (e) => {
         const name = sheet.querySelector('#f-name').value.trim();
         if (!name) { toast('El nombre es obligatorio'); return; }
         const muscleGroup = sheet.querySelector('#f-muscle').value.trim();
@@ -145,37 +145,55 @@ async function openExerciseForm(mount, existing) {
         const newEquipmentType = sheet.querySelector('#f-equipment .seg.active')?.dataset.equipment ?? 'other';
         const defaultBarId = newEquipmentType === 'barbell' ? (sheet.querySelector('#f-bar').value || null) : null;
         const loadMode = sheet.querySelector('#f-load-mode .seg.active')?.dataset.mode ?? 'total';
-        if (isEdit) {
-          if (loadMode !== (existing.loadMode ?? 'total')) {
-            const history = await repo.getExerciseHistory(existing.id);
-            if (history.length) {
-              close();
-              const ok = await openConfirmSheet('Esto cambiará cómo se calcula el volumen de las sesiones ya registradas de este ejercicio. ¿Continuar?', { confirmLabel: 'Continuar' });
-              if (!ok) return;
-            }
+        const btn = e.currentTarget;
+        if (isEdit && loadMode !== (existing.loadMode ?? 'total')) {
+          const history = await repo.getExerciseHistory(existing.id);
+          if (history.length) {
+            close();
+            const ok = await openConfirmSheet('Esto cambiará cómo se calcula el volumen de las sesiones ya registradas de este ejercicio. ¿Continuar?', { confirmLabel: 'Continuar' });
+            if (!ok) return;
           }
-          await repo.updateExercise(existing.id, { name, muscleGroup, notes, loadMode, equipmentType: newEquipmentType, defaultBarId });
-        } else {
-          await repo.createExercise({ name, muscleGroup, notes, loadMode, equipmentType: newEquipmentType, defaultBarId });
         }
-        close();
-        await renderList(mount);
-        toast(isEdit ? 'Ejercicio actualizado' : 'Ejercicio creado');
+        btn.disabled = true;
+        try {
+          if (isEdit) {
+            await repo.updateExercise(existing.id, { name, muscleGroup, notes, loadMode, equipmentType: newEquipmentType, defaultBarId });
+          } else {
+            await repo.createExercise({ name, muscleGroup, notes, loadMode, equipmentType: newEquipmentType, defaultBarId });
+          }
+          close();
+          await renderList(mount);
+          toast(isEdit ? 'Ejercicio actualizado' : 'Ejercicio creado');
+        } catch (err) {
+          console.error('Error al guardar el ejercicio', err);
+          toast('No se ha podido guardar. Inténtalo de nuevo.');
+          btn.disabled = false;
+        }
       });
 
       sheet.querySelector('#f-archive')?.addEventListener('click', async () => {
-        await repo.setExerciseArchived(existing.id, !existing.archived);
-        close();
-        await renderList(mount);
+        try {
+          await repo.setExerciseArchived(existing.id, !existing.archived);
+          close();
+          await renderList(mount);
+        } catch (err) {
+          console.error('Error al archivar el ejercicio', err);
+          toast('No se ha podido archivar. Inténtalo de nuevo.');
+        }
       });
 
       sheet.querySelector('#f-delete')?.addEventListener('click', async () => {
         close();
         const ok = await openConfirmSheet(`¿Eliminar "${existing.name}"? Esto no elimina los entrenamientos pasados, pero perderás la ficha del ejercicio.`, { confirmLabel: 'Eliminar' });
         if (!ok) return;
-        await repo.deleteExercise(existing.id);
-        await renderList(mount);
-        toast('Ejercicio eliminado');
+        try {
+          await repo.deleteExercise(existing.id);
+          await renderList(mount);
+          toast('Ejercicio eliminado');
+        } catch (err) {
+          console.error('Error al eliminar el ejercicio', err);
+          toast('No se ha podido eliminar el ejercicio.');
+        }
       });
     },
   });

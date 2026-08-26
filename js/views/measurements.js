@@ -164,15 +164,23 @@ function openConfigureSheet(mount) {
         await refresh();
       });
 
-      sheet.querySelector('#save-config-btn').addEventListener('click', async () => {
-        for (const t of all) {
-          if (pendingEnabled[t.id] !== (t.enabled !== false)) {
-            await repo.setMeasurementTypeEnabled(t.id, pendingEnabled[t.id]);
+      sheet.querySelector('#save-config-btn').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          for (const t of all) {
+            if (pendingEnabled[t.id] !== (t.enabled !== false)) {
+              await repo.setMeasurementTypeEnabled(t.id, pendingEnabled[t.id]);
+            }
           }
+          close();
+          toast('Configuración guardada');
+          await renderMeasurements(mount);
+        } catch (err) {
+          console.error('Error al guardar la configuración de medidas', err);
+          toast('No se ha podido guardar. Inténtalo de nuevo.');
+          btn.disabled = false;
         }
-        close();
-        toast('Configuración guardada');
-        await renderMeasurements(mount);
       });
 
       await refresh();
@@ -219,7 +227,7 @@ function openRegisterSheet(mount, types) {
         `;
       }).join('');
 
-      sheet.querySelector('#r-save').addEventListener('click', async () => {
+      sheet.querySelector('#r-save').addEventListener('click', async (e) => {
         const date = sheet.querySelector('#r-date').value;
         if (!date) { toast('La fecha es obligatoria'); return; }
         const grouped = {};
@@ -228,19 +236,25 @@ function openRegisterSheet(mount, types) {
           grouped[input.dataset.type] = grouped[input.dataset.type] || {};
           grouped[input.dataset.type][input.dataset.side] = Number(input.value);
         });
-        let any = false;
-        for (const [typeId, sides] of Object.entries(grouped)) {
-          any = true;
-          if (sides.single != null) {
-            await repo.addMeasurement({ typeId, date, value: sides.single });
-          } else {
-            await repo.addMeasurement({ typeId, date, valueLeft: sides.left ?? null, valueRight: sides.right ?? null });
+        if (!Object.keys(grouped).length) { toast('Introduce al menos un valor'); return; }
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          for (const [typeId, sides] of Object.entries(grouped)) {
+            if (sides.single != null) {
+              await repo.addMeasurement({ typeId, date, value: sides.single });
+            } else {
+              await repo.addMeasurement({ typeId, date, valueLeft: sides.left ?? null, valueRight: sides.right ?? null });
+            }
           }
+          close();
+          toast('Medidas guardadas');
+          await renderMeasurements(mount);
+        } catch (err) {
+          console.error('Error al guardar las medidas', err);
+          toast('No se ha podido guardar. Inténtalo de nuevo.');
+          btn.disabled = false;
         }
-        if (!any) { toast('Introduce al menos un valor'); return; }
-        close();
-        toast('Medidas guardadas');
-        await renderMeasurements(mount);
       });
     },
   });

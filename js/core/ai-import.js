@@ -11,6 +11,19 @@ export const APP_SHARED_TOKEN = 'ec5ce8f09593adbab9aa8f70deda1b330ae58a91531ffa4
 
 const SET_TYPES = ['normal', 'fallo', 'restpause', 'descendente', 'amrap'];
 
+// Cotas defensivas frente a una respuesta de Gemini mal formada/alucinada —
+// sin límite, un "sets: 999999999" sobreviviría la limpieza de tipos y
+// colgaría la pestaña al crear cientos de millones de filas en
+// startWorkoutFromTemplate. Los máximos son generosos (muy por encima de
+// cualquier rutina real) para no recortar nunca un caso legítimo.
+const MAX_SETS_PER_EXERCISE = 50;
+const MAX_SEQUENCE_LENGTH = 30;
+const MAX_EXTRA_REPS_LENGTH = 30;
+const MAX_DROP_STEPS_LENGTH = 20;
+const MAX_EXERCISES_PER_ROUTINE = 80;
+const MAX_ROUTINES = 30;
+const MAX_UNRECOGNIZED = 100;
+
 // Number(null) === 0 y Number('') === 0 — hay que descartar "ausente" ANTES
 // de convertir, o un campo que la IA dejó en null (a propósito, por no
 // inventar) se convertiría en un 0 inventado por nosotros.
@@ -90,33 +103,36 @@ function parseRirRaw(raw) {
 // Núcleo de campos de "forma de la serie", compartido entre un ejercicio
 // plano y cada entrada de weekValues[] (misma limpieza en ambos casos).
 function cleanExerciseCore(e) {
-  const sets = Math.max(1, cleanInt(e?.sets) ?? 1);
-  const repsMin = cleanInt(e?.repsMin);
-  const repsMax = cleanInt(e?.repsMax) ?? repsMin;
+  const sets = Math.min(MAX_SETS_PER_EXERCISE, Math.max(1, cleanInt(e?.sets) ?? 1));
+  const repsMinRaw = cleanInt(e?.repsMin);
+  const repsMin = repsMinRaw != null && repsMinRaw >= 0 ? repsMinRaw : null;
+  const repsMaxRaw = cleanInt(e?.repsMax);
+  const repsMax = (repsMaxRaw != null && repsMaxRaw >= 0 ? repsMaxRaw : null) ?? repsMin;
   // Progresión/pirámide por serie (ej. "6/8/10/12") — distinta de un rango
   // uniforme. Una "secuencia" de un único valor no tiene sentido, se
   // descarta (deja el rango como fuente de verdad en ese caso).
   const repsSequenceRaw = Array.isArray(e?.repsSequence)
-    ? e.repsSequence.map((r) => cleanInt(r)).filter((r) => r != null)
+    ? e.repsSequence.slice(0, MAX_SEQUENCE_LENGTH).map((r) => cleanInt(r)).filter((r) => r != null && r >= 0)
     : null;
   const repsSequence = repsSequenceRaw && repsSequenceRaw.length > 1 ? repsSequenceRaw : null;
   const weightSequenceRaw = Array.isArray(e?.weightSequence)
-    ? e.weightSequence.map((w) => cleanNum(w)).filter((w) => w != null)
+    ? e.weightSequence.slice(0, MAX_SEQUENCE_LENGTH).map((w) => cleanNum(w)).filter((w) => w != null && w >= 0)
     : null;
   const weightSequence = repsSequence && weightSequenceRaw && weightSequenceRaw.length === repsSequence.length ? weightSequenceRaw : null;
   const setType = SET_TYPES.includes(e?.setType) ? e.setType : 'normal';
   const extraReps = Array.isArray(e?.extraReps)
-    ? e.extraReps.map((r) => cleanInt(r)).filter((r) => r != null)
+    ? e.extraReps.slice(0, MAX_EXTRA_REPS_LENGTH).map((r) => cleanInt(r)).filter((r) => r != null && r >= 0)
     : null;
   const steps = Array.isArray(e?.steps)
-    ? e.steps.map((s) => ({ weight: cleanNum(s?.weight), reps: cleanInt(s?.reps) })).filter((s) => s.weight != null || s.reps != null)
+    ? e.steps.slice(0, MAX_DROP_STEPS_LENGTH).map((s) => ({ weight: cleanNum(s?.weight), reps: cleanInt(s?.reps) })).filter((s) => (s.weight == null || s.weight >= 0) && (s.reps == null || s.reps >= 0) && (s.weight != null || s.reps != null))
     : null;
+  const weightHintRaw = cleanNum(e?.weightHintKg);
   return {
     sets, repsMin, repsMax, repsSequence, weightSequence, setType,
     lastSetOnly: e?.lastSetOnly === true,
     extraReps: extraReps?.length ? extraReps : null,
     steps: steps?.length ? steps : null,
-    weightHintKg: cleanNum(e?.weightHintKg),
+    weightHintKg: weightHintRaw != null && weightHintRaw >= 0 ? weightHintRaw : null,
   };
 }
 
@@ -152,7 +168,7 @@ function resolveWeekValues(weekValuesRaw) {
 // o se descarta por separado. Solo lanza si la respuesta ni siquiera es un
 // objeto reconocible (eso sí debe mostrarse como fallo del análisis).
 function validateExercises(exercisesRaw) {
-  const list = Array.isArray(exercisesRaw) ? exercisesRaw : [];
+  const list = (Array.isArray(exercisesRaw) ? exercisesRaw : []).slice(0, MAX_EXERCISES_PER_ROUTINE);
   return list.map((e) => {
     const resolved = resolveWeekValues(e?.weekValues);
     // Fuente de los campos "de forma de la serie": la semana elegida si el
@@ -207,12 +223,12 @@ const STRUCTURE_CONFIDENCES = ['high', 'low', 'none'];
 // cliente decide qué hacer con eso, la IA nunca decide sola).
 export function validateImportedProgram(raw) {
   if (!raw || typeof raw !== 'object') throw new Error('INVALID_RESPONSE');
-  const routinesRaw = Array.isArray(raw.routines) ? raw.routines : (raw.exercises ? [raw] : []);
+  const routinesRaw = (Array.isArray(raw.routines) ? raw.routines : (raw.exercises ? [raw] : [])).slice(0, MAX_ROUTINES);
   const routines = routinesRaw.map((r) => ({
     workoutName: cleanStr(r?.workoutName ?? r?.name) ?? 'Entrenamiento importado',
     description: cleanStr(r?.routineDescription) ?? '',
     exercises: validateExercises(r?.exercises),
-    unrecognized: Array.isArray(r?.unrecognized) ? r.unrecognized.filter((s) => typeof s === 'string' && s.trim()) : [],
+    unrecognized: Array.isArray(r?.unrecognized) ? r.unrecognized.filter((s) => typeof s === 'string' && s.trim()).slice(0, MAX_UNRECOGNIZED) : [],
   }));
   const structureConfidence = STRUCTURE_CONFIDENCES.includes(raw.structureConfidence) ? raw.structureConfidence : null;
   return {

@@ -322,10 +322,18 @@ async function saveRoutine(mount, state) {
     if (!ok) return;
   }
 
-  const template = await repo.createTemplate({ name: state.name, icon: state.icon, description: state.description });
-  for (const item of state.selected) {
-    await repo.addTemplateExercise(template.id, item.exercise.id, { targetSets: 3 });
+  const btn = mount.querySelector('#wiz-right');
+  if (btn) btn.disabled = true;
+  try {
+    const template = await repo.createTemplate({ name: state.name, icon: state.icon, description: state.description });
+    for (const item of state.selected) {
+      await repo.addTemplateExercise(template.id, item.exercise.id, { targetSets: 3 });
+    }
+    toast('Rutina creada');
+    navigate(`/entreno/plantilla/${template.id}`);
+  } catch (err) {
+    console.error('Error al guardar la rutina', err);
+    toast('No se ha podido guardar la rutina. Inténtalo de nuevo.');
+    if (btn) btn.disabled = false;
   }
-  toast('Rutina creada');
-  navigate(`/entreno/plantilla/${template.id}`);
 }

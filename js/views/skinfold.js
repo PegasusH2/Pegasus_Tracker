@@ -205,13 +205,21 @@ async function openPointSheet(mount, site, meta) {
     <button class="btn btn-primary btn-block" id="p-save">Guardar</button>
   `, {
     onMount: (sheet, close) => {
-      sheet.querySelector('#p-save').addEventListener('click', async () => {
+      sheet.querySelector('#p-save').addEventListener('click', async (e) => {
         const date = sheet.querySelector('#p-date').value;
         const value = sheet.querySelector('#p-value').value;
         if (!date || value === '') { toast('Fecha y valor son obligatorios'); return; }
-        await repo.addSkinfoldEntry({ siteId: site.id, date, valueMm: Number(value) });
-        close();
-        await renderSkinfold(mount);
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          await repo.addSkinfoldEntry({ siteId: site.id, date, valueMm: Number(value) });
+          close();
+          await renderSkinfold(mount);
+        } catch (err) {
+          console.error('Error al guardar el pliegue', err);
+          toast('No se ha podido guardar. Inténtalo de nuevo.');
+          btn.disabled = false;
+        }
       });
     },
   });
@@ -279,20 +287,24 @@ function openBulkEntrySheet(mount, sites) {
     <button class="btn btn-primary btn-block" id="f-save">Guardar</button>
   `, {
     onMount: (sheet, close) => {
-      sheet.querySelector('#f-save').addEventListener('click', async () => {
+      sheet.querySelector('#f-save').addEventListener('click', async (e) => {
         const date = sheet.querySelector('#f-date').value;
         if (!date) { toast('La fecha es obligatoria'); return; }
-        const inputs = sheet.querySelectorAll('.site-input');
-        let any = false;
-        for (const input of inputs) {
-          const value = input.value;
-          if (value === '') continue;
-          any = true;
-          await repo.addSkinfoldEntry({ siteId: input.dataset.site, date, valueMm: Number(value) });
+        const inputs = [...sheet.querySelectorAll('.site-input')].filter((input) => input.value !== '');
+        if (!inputs.length) { toast('Introduce al menos un valor'); return; }
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          for (const input of inputs) {
+            await repo.addSkinfoldEntry({ siteId: input.dataset.site, date, valueMm: Number(input.value) });
+          }
+          close();
+          await renderSkinfold(mount);
+        } catch (err) {
+          console.error('Error al guardar el plicómetro', err);
+          toast('No se ha podido guardar. Inténtalo de nuevo.');
+          btn.disabled = false;
         }
-        if (!any) { toast('Introduce al menos un valor'); return; }
-        close();
-        await renderSkinfold(mount);
       });
     },
   });

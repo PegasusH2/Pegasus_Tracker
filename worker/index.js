@@ -286,56 +286,71 @@ function logEvent(fields) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), ...fields }));
 }
 
-function corsHeaders() {
+// El token compartido (APP_SHARED_TOKEN) es público por diseño (vive en el
+// JS de la PWA), así que restringir el origen aquí no es la defensa
+// principal — pero reduce la superficie para que una página de terceros que
+// hubiera copiado el token no pueda invocar el Worker directamente desde el
+// navegador de otro usuario. localhost queda permitido para poder probar
+// contra el Worker real en desarrollo.
+const ALLOWED_ORIGINS = [
+  'https://pegasush2.github.io',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+];
+
+function corsHeaders(request) {
+  const origin = request?.headers.get('Origin');
+  const allowOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-App-Token, X-Admin-Session',
+    'Vary': 'Origin',
   };
 }
 
-function jsonError(message, status) {
+function jsonError(request, message, status) {
   return new Response(JSON.stringify({ error: message }), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
   });
 }
 
 async function handleAdminLogin(request, env) {
-  if (request.method !== 'POST') return jsonError('Método no permitido', 405);
+  if (request.method !== 'POST') return jsonError(request, 'Método no permitido', 405);
   const ip = getClientIp(request);
 
-  if (!env.ADMIN_SECRET) return jsonError('Modo administrador no configurado', 503);
+  if (!env.ADMIN_SECRET) return jsonError(request, 'Modo administrador no configurado', 503);
 
   const okRate = await checkRateLimit(env, `login:${ip}`, LOGIN_RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_SECONDS);
   if (!okRate) {
     logEvent({ role: 'admin-login', success: false, reason: 'rate_limited' });
-    return jsonError('Demasiados intentos, inténtalo más tarde', 429);
+    return jsonError(request, 'Demasiados intentos, inténtalo más tarde', 429);
   }
 
   let body;
   try {
     body = await request.json();
   } catch {
-    return jsonError('Cuerpo de la petición no válido', 400);
+    return jsonError(request, 'Cuerpo de la petición no válido', 400);
   }
   const password = typeof body?.password === 'string' ? body.password : '';
 
   if (!password || !constantTimeEqual(password, env.ADMIN_SECRET)) {
     logEvent({ role: 'admin-login', success: false, reason: 'invalid_password' });
-    return jsonError('No autorizado', 401);
+    return jsonError(request, 'No autorizado', 401);
   }
 
   const session = await createAdminSessionToken(env.ADMIN_SECRET);
   logEvent({ role: 'admin-login', success: true });
   return new Response(JSON.stringify({ token: session.token, expiresAt: session.expiresAt }), {
     status: 200,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
   });
 }
 
 async function handleAnalyze(request, env) {
-  if (request.method !== 'POST') return jsonError('Método no permitido', 405);
+  if (request.method !== 'POST') return jsonError(request, 'Método no permitido', 405);
 
   const ip = getClientIp(request);
 
@@ -352,12 +367,12 @@ async function handleAnalyze(request, env) {
     // PWA), solo frena rastreadores/bots que encuentren esta URL y quemen la
     // cuota gratuita de Gemini sin querer.
     if (env.APP_SHARED_TOKEN && request.headers.get('X-App-Token') !== env.APP_SHARED_TOKEN) {
-      return jsonError('No autorizado', 401);
+      return jsonError(request, 'No autorizado', 401);
     }
     const okRate = await checkRateLimit(env, `analyze:${ip}`, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SECONDS);
     if (!okRate) {
       logEvent({ role: 'user', success: false, reason: 'rate_limited' });
-      return jsonError('Demasiadas peticiones, inténtalo más tarde', 429);
+      return jsonError(request, 'Demasiadas peticiones, inténtalo más tarde', 429);
     }
   }
 
@@ -365,12 +380,12 @@ async function handleAnalyze(request, env) {
   try {
     body = await request.json();
   } catch {
-    return jsonError('Cuerpo de la petición no válido', 400);
+    return jsonError(request, 'Cuerpo de la petición no válido', 400);
   }
 
   const { image, mimeType, mode } = body || {};
-  if (!image || typeof image !== 'string') return jsonError('Falta la imagen', 400);
-  if (image.length > MAX_BASE64_LENGTH) return jsonError('La imagen es demasiado grande', 413);
+  if (!image || typeof image !== 'string') return jsonError(request, 'Falta la imagen', 400);
+  if (image.length > MAX_BASE64_LENGTH) return jsonError(request, 'La imagen es demasiado grande', 413);
 
   const role = isAdmin ? 'admin' : 'user';
   const model = env.GEMINI_MODEL || 'gemini-flash-latest';
@@ -390,30 +405,41 @@ async function handleAnalyze(request, env) {
     },
   };
 
+  // Sin timeout, una petición colgada a Gemini corre hasta el límite de
+  // ejecución de la plataforma Workers en vez de fallar rápido con un
+  // mensaje controlado.
+  const GEMINI_TIMEOUT_MS = 25_000;
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), GEMINI_TIMEOUT_MS);
+
   let geminiRes;
   try {
     geminiRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: timeoutController.signal,
     });
   } catch (err) {
-    logEvent({ role, mode: mode || 'auto', success: false, reason: 'network_error' });
-    return jsonError('No se pudo contactar con el servicio de IA', 502);
+    const reason = err?.name === 'AbortError' ? 'timeout' : 'network_error';
+    logEvent({ role, mode: mode || 'auto', success: false, reason });
+    return jsonError(request, reason === 'timeout' ? 'El servicio de IA ha tardado demasiado en responder' : 'No se pudo contactar con el servicio de IA', 502);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!geminiRes.ok) {
     const errText = await geminiRes.text().catch(() => '');
     console.error('Gemini error', geminiRes.status, errText);
     logEvent({ role, mode: mode || 'auto', success: false, reason: 'gemini_error', status: geminiRes.status });
-    return jsonError('El servicio de IA no pudo procesar la imagen', 502);
+    return jsonError(request, 'El servicio de IA no pudo procesar la imagen', 502);
   }
 
   const data = await geminiRes.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
     logEvent({ role, mode: mode || 'auto', success: false, reason: 'empty_response' });
-    return jsonError('Respuesta vacía de la IA', 502);
+    return jsonError(request, 'Respuesta vacía de la IA', 502);
   }
 
   const usage = data?.usageMetadata
@@ -427,14 +453,14 @@ async function handleAnalyze(request, env) {
 
   return new Response(text, {
     status: 200,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
   });
 }
 
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders() });
+      return new Response(null, { headers: corsHeaders(request) });
     }
 
     const { pathname } = new URL(request.url);

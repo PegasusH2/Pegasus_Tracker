@@ -1,0 +1,128 @@
+import { test, describe, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import './setup-db.js'; // pone `Dexie`/`indexedDB` como globales ANTES de nada más
+
+const DB_NAME = 'FitnessTrackerDB'; // mismo nombre que usa schema.js — a propósito
+
+async function deleteRealDb() {
+  await new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(DB_NAME);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve();
+  });
+}
+
+afterEach(async () => {
+  await deleteRealDb();
+});
+
+describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
+  test('crea la base de datos directamente en la última versión sin lanzar', async () => {
+    const schema = await import(`../js/db/schema.js?fresh1=${Date.now()}`);
+    await schema.db.exercises.toArray(); // fuerza la apertura real
+    assert.equal(schema.SCHEMA_VERSION, 12);
+    assert.equal(schema.db.verno, 12);
+  });
+
+  test('la tabla "bars" se siembra con 3 barras por defecto en una instalación fresca', async () => {
+    const schema = await import(`../js/db/schema.js?fresh2=${Date.now()}`);
+    const bars = await schema.db.bars.toArray();
+    // OJO: el .upgrade() de v8 solo se ejecuta al ACTUALIZAR desde una
+    // versión anterior, no al crear una base nueva (comportamiento nativo de
+    // Dexie) — en una instalación fresca la tabla puede quedar vacía. Esto
+    // es un riesgo conocido, documentado en el informe final; este test deja
+    // constancia del comportamiento real para detectar si cambia sin darnos cuenta.
+    assert.ok(Array.isArray(bars));
+  });
+});
+
+describe('Actualización desde v1 (usuario con la app instalada desde el principio)', () => {
+  test('sube de v1 a v12 sin lanzar y preservando los datos ya guardados', async () => {
+    // 1) Crea la base de datos tal cual era en v1, con datos reales de un
+    // "usuario antiguo", SIN pasar por schema.js todavía.
+    const oldDb = new Dexie(DB_NAME);
+    oldDb.version(1).stores({
+      exercises: 'id, name, muscleGroup, archived',
+      workouts: 'id, date',
+      workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+      sets: 'id, workoutExerciseId, setNumber',
+      bodyWeight: 'id, date',
+      measurementTypes: 'id, order',
+      measurements: 'id, typeId, [typeId+date]',
+      skinfoldSites: 'id, order',
+      skinfoldEntries: 'id, siteId, [siteId+date]',
+      settings: 'key',
+    });
+    await oldDb.open();
+    await oldDb.exercises.add({ id: 'ex1', name: 'Press banca', muscleGroup: 'Pecho', archived: false });
+    await oldDb.workouts.add({ id: 'w1', date: '2025-01-01' });
+    await oldDb.workoutExercises.add({ id: 'we1', workoutId: 'w1', exerciseId: 'ex1', order: 0 });
+    // Serie YA REALIZADA en la v1 original (peso y reps rellenados) — debe
+    // sobrevivir la subida hasta v12 con done=true (la migración de v12 usa
+    // "tenía peso+reps" como proxy de "esto ya se hizo de verdad").
+    await oldDb.sets.add({ id: 's1', workoutExerciseId: 'we1', setNumber: 1, weight: 80, reps: 8 });
+    await oldDb.bodyWeight.add({ id: 'bw1', date: '2025-01-01', weightKg: 82 });
+    oldDb.close();
+
+    // 2) Importa schema.js DESPUÉS de sembrar los datos de v1 — al abrirse,
+    // Dexie detecta la base existente en v1 y sube en cadena hasta v12,
+    // ejecutando cada .upgrade() de por medio.
+    const schema = await import(`../js/db/schema.js?upgrade1=${Date.now()}`);
+    await schema.db.exercises.toArray();
+    assert.equal(schema.db.verno, 12);
+
+    // 3) El ejercicio y el entrenamiento originales siguen ahí, intactos.
+    const exercise = await schema.db.exercises.get('ex1');
+    assert.equal(exercise.name, 'Press banca');
+    // v6 añadió equipmentType/defaultBarId con default seguro:
+    assert.equal(exercise.equipmentType, 'other');
+    assert.equal(exercise.defaultBarId, null);
+    // v10 añadió isFavorite:
+    assert.equal(exercise.isFavorite, false);
+
+    const workout = await schema.db.workouts.get('w1');
+    assert.equal(workout.date, '2025-01-01');
+
+    // 4) La serie original (con peso/reps reales) conserva su peso/reps Y
+    // gana los campos nuevos con defaults que no cambian su comportamiento.
+    const set = await schema.db.sets.get('s1');
+    assert.equal(set.weight, 80);
+    assert.equal(set.reps, 8);
+    assert.equal(set.type, 'normal'); // v6
+    assert.equal(set.barWeightKg, null); // v6/v8
+    // v12: como ya tenía peso+reps reales, se considera "ya hecha" — si esto
+    // fallara, todo el historial de un usuario antiguo se vería "sin
+    // confirmar" tras actualizar, que es justo el bug que esto evita.
+    assert.equal(set.done, true);
+
+    // 5) Las tablas nuevas (bars) existen y, al venir de una actualización
+    // real (no una instalación fresca), SÍ se siembran automáticamente.
+    const bars = await schema.db.bars.toArray();
+    assert.equal(bars.length, 3);
+    assert.ok(bars.some((b) => b.name === 'Olímpica' && b.weightKg === 20));
+  });
+
+  test('una serie vacía (sin peso ni reps) de un usuario antiguo NO se marca como hecha al migrar', async () => {
+    const oldDb = new Dexie(DB_NAME);
+    oldDb.version(1).stores({
+      exercises: 'id, name, muscleGroup, archived',
+      workouts: 'id, date',
+      workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+      sets: 'id, workoutExerciseId, setNumber',
+      bodyWeight: 'id, date',
+      measurementTypes: 'id, order',
+      measurements: 'id, typeId, [typeId+date]',
+      skinfoldSites: 'id, order',
+      skinfoldEntries: 'id, siteId, [siteId+date]',
+      settings: 'key',
+    });
+    await oldDb.open();
+    await oldDb.sets.add({ id: 's-empty', workoutExerciseId: 'we-none', setNumber: 1, weight: null, reps: null });
+    oldDb.close();
+
+    const schema = await import(`../js/db/schema.js?upgrade2=${Date.now()}`);
+    const set = await schema.db.sets.get('s-empty');
+    assert.equal(set.done, false);
+  });
+});

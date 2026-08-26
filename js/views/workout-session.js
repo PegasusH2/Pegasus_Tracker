@@ -121,6 +121,25 @@ function openAddExerciseSheet(mount, workoutId) {
 
 async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit = 'kg') {
   const exercise = await repo.getExercise(exerciseId);
+  // El ejercicio pudo borrarse de la biblioteca después de registrar esta
+  // serie (borrar un ejercicio nunca borra el histórico, ver
+  // exercise-library.js) — se muestra como "Ejercicio eliminado" en vez de
+  // romper la pantalla, igual que ya hace templates.js.
+  if (!exercise) {
+    card.innerHTML = `
+      <div class="exercise-card-header">
+        <h3 class="type-body text-faint" style="font-style:italic;">Ejercicio eliminado</h3>
+        <button class="btn btn-ghost-danger btn-sm remove-exercise">Quitar</button>
+      </div>
+    `;
+    card.querySelector('.remove-exercise').addEventListener('click', async () => {
+      const ok = await openConfirmSheet('¿Quitar este ejercicio de este entrenamiento?', { confirmLabel: 'Quitar' });
+      if (!ok) return;
+      await repo.removeExerciseFromWorkout(workoutExerciseId);
+      card.remove();
+    });
+    return;
+  }
   const workoutExercise = await repo.getWorkoutExercise(workoutExerciseId);
   const currentSets = await repo.getSetsForWorkoutExercise(workoutExerciseId);
   const lastEntry = await repo.getLastSessionForExercise(exerciseId, { excludeWorkoutId: workout.id });

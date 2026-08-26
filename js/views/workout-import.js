@@ -290,7 +290,7 @@ function paintProgramList(mount, programState, file, mode) {
   renderProgramList(mount, programState, file, mode);
 
   mount.querySelector('#pr-resolve-all')?.addEventListener('click', () => resolveAllPending(mount, programState, file, mode));
-  mount.querySelector('#pr-save').addEventListener('click', () => saveProgram(programState));
+  mount.querySelector('#pr-save').addEventListener('click', (e) => saveProgram(programState, e.currentTarget));
   mount.querySelector('#pr-cancel').addEventListener('click', () => navigate('/entreno'));
 }
 
@@ -662,7 +662,7 @@ function openTypeChoiceSheet(current, onSelect) {
 }
 
 // ---------- Guardar ----------
-async function saveProgram(programState) {
+async function saveProgram(programState, btn) {
   const unresolvedRoutine = programState.routines.find((r) => r.items.some((i) => !i.matchedExercise));
   if (unresolvedRoutine) {
     toast(`Resuelve todos los ejercicios de "${unresolvedRoutine.workoutName}" antes de guardar`);
@@ -674,31 +674,38 @@ async function saveProgram(programState) {
     return;
   }
 
-  let firstTemplateId = null;
-  for (const routine of programState.routines) {
-    const template = await repo.createTemplate({ name: routine.workoutName, description: routine.description || '' });
-    if (!firstTemplateId) firstTemplateId = template.id;
-    for (const item of routine.items) {
-      const usesSpecialType = item.setType !== 'normal';
-      await repo.addTemplateExercise(template.id, item.matchedExercise.id, {
-        targetSets: item.repsSequence ? item.repsSequence.length : item.sets,
-        targetRepsMin: item.repsMin,
-        targetRepsMax: item.repsMax,
-        targetRepsSequence: item.repsSequence,
-        targetWeightSequence: item.weightSequence,
-        targetRir: item.rir,
-        targetRestSeconds: item.targetRestSeconds ?? null,
-        notes: item.notes || '',
-        defaultSetType: usesSpecialType ? item.setType : 'normal',
-        defaultLastSetOnly: usesSpecialType && item.lastSetOnly,
-        defaultRestPauseExtra: usesSpecialType && item.setType === 'restpause' ? item.extraReps : null,
-        defaultDropSteps: usesSpecialType && item.setType === 'descendente' ? item.steps : null,
-        rawText: item.rawText ?? null,
-      });
+  if (btn) btn.disabled = true;
+  try {
+    let firstTemplateId = null;
+    for (const routine of programState.routines) {
+      const template = await repo.createTemplate({ name: routine.workoutName, description: routine.description || '' });
+      if (!firstTemplateId) firstTemplateId = template.id;
+      for (const item of routine.items) {
+        const usesSpecialType = item.setType !== 'normal';
+        await repo.addTemplateExercise(template.id, item.matchedExercise.id, {
+          targetSets: item.repsSequence ? item.repsSequence.length : item.sets,
+          targetRepsMin: item.repsMin,
+          targetRepsMax: item.repsMax,
+          targetRepsSequence: item.repsSequence,
+          targetWeightSequence: item.weightSequence,
+          targetRir: item.rir,
+          targetRestSeconds: item.targetRestSeconds ?? null,
+          notes: item.notes || '',
+          defaultSetType: usesSpecialType ? item.setType : 'normal',
+          defaultLastSetOnly: usesSpecialType && item.lastSetOnly,
+          defaultRestPauseExtra: usesSpecialType && item.setType === 'restpause' ? item.extraReps : null,
+          defaultDropSteps: usesSpecialType && item.setType === 'descendente' ? item.steps : null,
+          rawText: item.rawText ?? null,
+        });
+      }
     }
-  }
 
-  const count = programState.routines.length;
-  toast(count === 1 ? 'Rutina creada' : `${count} rutinas creadas`);
-  navigate(count === 1 ? `/entreno/plantilla/${firstTemplateId}` : '/entreno');
+    const count = programState.routines.length;
+    toast(count === 1 ? 'Rutina creada' : `${count} rutinas creadas`);
+    navigate(count === 1 ? `/entreno/plantilla/${firstTemplateId}` : '/entreno');
+  } catch (err) {
+    console.error('Error al guardar el programa importado', err);
+    toast('No se ha podido guardar. Inténtalo de nuevo.');
+    if (btn) btn.disabled = false;
+  }
 }

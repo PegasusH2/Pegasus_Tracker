@@ -53,9 +53,17 @@ export async function renderTemplateDetail(mount, { templateId }) {
       },
     });
   });
-  mount.querySelector('#start-workout')?.addEventListener('click', async () => {
-    const workout = await repo.startWorkoutFromTemplate(templateId, { date: todayISO() });
-    navigate(`/entreno/sesion/${workout.id}`);
+  mount.querySelector('#start-workout')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const workout = await repo.startWorkoutFromTemplate(templateId, { date: todayISO() });
+      navigate(`/entreno/sesion/${workout.id}`);
+    } catch (err) {
+      console.error('Error al empezar la rutina', err);
+      toast('No se ha podido empezar el entrenamiento. Inténtalo de nuevo.');
+      btn.disabled = false;
+    }
   });
 }
 
@@ -170,35 +178,48 @@ function openTemplateExerciseForm(mount, template, { te, exercise, isNew }) {
       });
       lastSetCheckbox.addEventListener('change', (e) => { lastSetOnly = e.target.checked; });
 
-      sheet.querySelector('#te-save').addEventListener('click', async () => {
-        const targetSets = Number(sheet.querySelector('#te-sets').value) || 1;
-        const repsMinRaw = sheet.querySelector('#te-reps-min').value;
-        const repsMaxRaw = sheet.querySelector('#te-reps-max').value;
-        const targetRepsMin = repsMinRaw === '' ? null : Number(repsMinRaw);
-        const targetRepsMax = repsMaxRaw === '' ? targetRepsMin : Number(repsMaxRaw);
-        const targetReps = targetRepsMax ?? targetRepsMin;
-        const targetRir = sheet.querySelector('#te-rir').value === '' ? null : Number(sheet.querySelector('#te-rir').value);
-        const targetRestSeconds = sheet.querySelector('#te-rest').value === '' ? null : Number(sheet.querySelector('#te-rest').value);
-        const notes = sheet.querySelector('#te-notes').value.trim();
-        const values = {
-          targetSets, targetReps, targetRepsMin, targetRepsMax, targetRir, targetRestSeconds, notes,
-          defaultSetType: setType,
-          defaultLastSetOnly: setType !== 'normal' && lastSetOnly,
-        };
-        if (isNew) {
-          await repo.addTemplateExercise(template.id, exercise.id, values);
-        } else {
-          await repo.updateTemplateExercise(te.id, values);
+      sheet.querySelector('#te-save').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          const targetSets = Number(sheet.querySelector('#te-sets').value) || 1;
+          const repsMinRaw = sheet.querySelector('#te-reps-min').value;
+          const repsMaxRaw = sheet.querySelector('#te-reps-max').value;
+          const targetRepsMin = repsMinRaw === '' ? null : Number(repsMinRaw);
+          const targetRepsMax = repsMaxRaw === '' ? targetRepsMin : Number(repsMaxRaw);
+          const targetReps = targetRepsMax ?? targetRepsMin;
+          const targetRir = sheet.querySelector('#te-rir').value === '' ? null : Number(sheet.querySelector('#te-rir').value);
+          const targetRestSeconds = sheet.querySelector('#te-rest').value === '' ? null : Number(sheet.querySelector('#te-rest').value);
+          const notes = sheet.querySelector('#te-notes').value.trim();
+          const values = {
+            targetSets, targetReps, targetRepsMin, targetRepsMax, targetRir, targetRestSeconds, notes,
+            defaultSetType: setType,
+            defaultLastSetOnly: setType !== 'normal' && lastSetOnly,
+          };
+          if (isNew) {
+            await repo.addTemplateExercise(template.id, exercise.id, values);
+          } else {
+            await repo.updateTemplateExercise(te.id, values);
+          }
+          close();
+          await renderTemplateDetail(mount, { templateId: template.id });
+        } catch (err) {
+          console.error('Error al guardar el ejercicio de la rutina', err);
+          toast('No se ha podido guardar. Inténtalo de nuevo.');
+          btn.disabled = false;
         }
-        close();
-        await renderTemplateDetail(mount, { templateId: template.id });
       });
       sheet.querySelector('#te-remove')?.addEventListener('click', async () => {
         close();
         const ok = await openConfirmSheet(`¿Quitar "${exercise.name}" de esta rutina?`, { confirmLabel: 'Quitar' });
         if (!ok) return;
-        await repo.removeTemplateExercise(te.id);
-        await renderTemplateDetail(mount, { templateId: template.id });
+        try {
+          await repo.removeTemplateExercise(te.id);
+          await renderTemplateDetail(mount, { templateId: template.id });
+        } catch (err) {
+          console.error('Error al quitar el ejercicio de la rutina', err);
+          toast('No se ha podido quitar el ejercicio.');
+        }
       });
     },
   });
@@ -253,20 +274,33 @@ function openEditTemplateSheet(mount, template) {
         selectedIcon = btn.dataset.icon;
         sheet.querySelectorAll('.icon-picker-opt').forEach((b) => b.classList.toggle('active', b === btn));
       });
-      sheet.querySelector('#t-save').addEventListener('click', async () => {
+      sheet.querySelector('#t-save').addEventListener('click', async (e) => {
         const name = sheet.querySelector('#t-name').value.trim();
         if (!name) { toast('El nombre es obligatorio'); return; }
-        const description = sheet.querySelector('#t-desc').value.trim();
-        await repo.updateTemplate(template.id, { name, description, icon: selectedIcon });
-        close();
-        await renderTemplateDetail(mount, { templateId: template.id });
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          const description = sheet.querySelector('#t-desc').value.trim();
+          await repo.updateTemplate(template.id, { name, description, icon: selectedIcon });
+          close();
+          await renderTemplateDetail(mount, { templateId: template.id });
+        } catch (err) {
+          console.error('Error al guardar la rutina', err);
+          toast('No se ha podido guardar. Inténtalo de nuevo.');
+          btn.disabled = false;
+        }
       });
       sheet.querySelector('#t-delete').addEventListener('click', async () => {
         close();
         const ok = await openConfirmSheet(`¿Eliminar la rutina "${template.name}"? Los entrenamientos que ya has hecho con ella no se verán afectados.`, { confirmLabel: 'Eliminar' });
         if (!ok) return;
-        await repo.deleteTemplate(template.id);
-        navigate('/entreno');
+        try {
+          await repo.deleteTemplate(template.id);
+          navigate('/entreno');
+        } catch (err) {
+          console.error('Error al eliminar la rutina', err);
+          toast('No se ha podido eliminar la rutina.');
+        }
       });
     },
   });

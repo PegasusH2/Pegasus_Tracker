@@ -1,6 +1,7 @@
 import * as repo from '../db/repository.js';
 import { todayISO, formatDate } from '../core/format.js';
 import { navigate } from '../app.js';
+import { toast } from '../core/store.js';
 
 export async function renderWorkoutNew(mount, { presetDate } = {}) {
   const date0 = presetDate || todayISO();
@@ -19,10 +20,18 @@ export async function renderWorkoutNew(mount, { presetDate } = {}) {
     <button class="btn btn-primary btn-block" id="w-start">Empezar entrenamiento</button>
   `;
 
-  mount.querySelector('#w-start').addEventListener('click', async () => {
-    const name = mount.querySelector('#w-name').value.trim() || defaultName;
-    const date = mount.querySelector('#w-date').value || date0;
-    const workout = await repo.createWorkout({ name, date });
-    navigate(`/entreno/sesion/${workout.id}`);
+  mount.querySelector('#w-start').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const name = mount.querySelector('#w-name').value.trim() || defaultName;
+      const date = mount.querySelector('#w-date').value || date0;
+      const workout = await repo.createWorkout({ name, date });
+      navigate(`/entreno/sesion/${workout.id}`);
+    } catch (err) {
+      console.error('Error al crear el entrenamiento', err);
+      toast('No se ha podido crear el entrenamiento. Inténtalo de nuevo.');
+      btn.disabled = false;
+    }
   });
 }

@@ -1,4 +1,28 @@
 import { db, newId } from './schema.js';
+import {
+  cleanNonNegativeNumber, cleanNonNegativeInt,
+  requireNonEmptyString, requirePositiveNumber, requireValidDate,
+} from '../core/validate.js';
+
+// Campos numéricos de `sets` que representan una cantidad física — nunca
+// tienen sentido en negativo. Se sanean (nunca lanzan) porque una serie se
+// crea vacía la mayoría de las veces y se rellena poco a poco.
+const SET_NUMERIC_FIELDS = [
+  'weight', 'weightKgPart', 'weightLbPart', 'restSeconds',
+  'barWeightKg', 'plateWeightPerSideKg', 'addedWeightKg',
+];
+const SET_INT_FIELDS = ['reps', 'rir', 'rpe'];
+
+function sanitizeSetFields(values) {
+  const clean = { ...values };
+  for (const key of SET_NUMERIC_FIELDS) {
+    if (key in clean) clean[key] = cleanNonNegativeNumber(clean[key]);
+  }
+  for (const key of SET_INT_FIELDS) {
+    if (key in clean) clean[key] = cleanNonNegativeInt(clean[key]);
+  }
+  return clean;
+}
 
 // ---------- Ejercicios ----------
 
@@ -19,7 +43,7 @@ export async function getExercise(id) {
 export async function createExercise({ name, muscleGroup = '', notes = '', loadMode = 'total', equipmentType = 'other', defaultBarId = null }) {
   const exercise = {
     id: newId(),
-    name: name.trim(),
+    name: requireNonEmptyString(name, 'El nombre del ejercicio'),
     muscleGroup,
     notes,
     loadMode,
@@ -76,7 +100,7 @@ export async function createWorkout({ name, date }) {
   const workout = {
     id: newId(),
     name,
-    date, // ISO date string (YYYY-MM-DD)
+    date: requireValidDate(date, 'La fecha del entrenamiento'), // ISO date string (YYYY-MM-DD)
     notes: '',
     completed: false,
     createdAt: new Date().toISOString(),
@@ -95,12 +119,17 @@ export async function updateWorkout(id, changes) {
 }
 
 export async function deleteWorkout(id) {
-  const wes = await db.workoutExercises.where('workoutId').equals(id).toArray();
-  for (const we of wes) {
-    await db.sets.where('workoutExerciseId').equals(we.id).delete();
-  }
-  await db.workoutExercises.where('workoutId').equals(id).delete();
-  await db.workouts.delete(id);
+  // Transacción: si se interrumpe a mitad (fallo, pestaña cerrada), no debe
+  // quedar el entrenamiento borrado con series/ejercicios huérfanos, ni al
+  // revés — o se borra todo, o no se borra nada.
+  await db.transaction('rw', [db.workoutExercises, db.sets, db.workouts], async () => {
+    const wes = await db.workoutExercises.where('workoutId').equals(id).toArray();
+    for (const we of wes) {
+      await db.sets.where('workoutExerciseId').equals(we.id).delete();
+    }
+    await db.workoutExercises.where('workoutId').equals(id).delete();
+    await db.workouts.delete(id);
+  });
 }
 
 export async function listWorkouts({ limit } = {}) {
@@ -172,8 +201,10 @@ export async function getWorkoutExercise(id) {
 }
 
 export async function removeExerciseFromWorkout(workoutExerciseId) {
-  await db.sets.where('workoutExerciseId').equals(workoutExerciseId).delete();
-  await db.workoutExercises.delete(workoutExerciseId);
+  await db.transaction('rw', [db.sets, db.workoutExercises], async () => {
+    await db.sets.where('workoutExerciseId').equals(workoutExerciseId).delete();
+    await db.workoutExercises.delete(workoutExerciseId);
+  });
 }
 
 export async function reorderWorkoutExercise(workoutExerciseId, newOrder) {
@@ -198,17 +229,19 @@ export async function getWorkoutDetail(workoutId) {
 // de series) de uno anterior. Los valores (peso/reps/RIR) NO se copian como
 // realizados — cada serie nueva se crea vacía; el entrenamiento antiguo no se toca.
 export async function repeatWorkout(oldWorkoutId, { name, date }) {
-  const detail = await getWorkoutDetail(oldWorkoutId);
-  if (!detail) throw new Error('Entrenamiento original no encontrado');
+  return db.transaction('rw', [db.workouts, db.workoutExercises, db.sets, db.exercises], async () => {
+    const detail = await getWorkoutDetail(oldWorkoutId);
+    if (!detail) throw new Error('Entrenamiento original no encontrado');
 
-  const workout = await createWorkout({ name, date });
-  for (const oldWe of detail.exercises) {
-    const we = await addExerciseToWorkout(workout.id, oldWe.exerciseId);
-    for (let i = 0; i < oldWe.sets.length; i++) {
-      await addSet(we.id, {});
+    const workout = await createWorkout({ name, date });
+    for (const oldWe of detail.exercises) {
+      const we = await addExerciseToWorkout(workout.id, oldWe.exerciseId);
+      for (let i = 0; i < oldWe.sets.length; i++) {
+        await addSet(we.id, {});
+      }
     }
-  }
-  return workout;
+    return workout;
+  });
 }
 
 // ---------- Plantillas de entrenamiento (Días/Rutinas) ----------
@@ -229,7 +262,7 @@ export async function createTemplate({ name, icon, description = '' }) {
   const existing = await db.templates.toArray();
   const template = {
     id: newId(),
-    name: name.trim(),
+    name: requireNonEmptyString(name, 'El nombre de la rutina'),
     icon: icon || 'pierna',
     description: description.trim(),
     order: existing.length,
@@ -244,9 +277,11 @@ export async function updateTemplate(id, changes) {
 }
 
 export async function deleteTemplate(id) {
-  const tes = await db.templateExercises.where('templateId').equals(id).toArray();
-  await db.templateExercises.bulkDelete(tes.map((t) => t.id));
-  await db.templates.delete(id);
+  await db.transaction('rw', [db.templateExercises, db.templates], async () => {
+    const tes = await db.templateExercises.where('templateId').equals(id).toArray();
+    await db.templateExercises.bulkDelete(tes.map((t) => t.id));
+    await db.templates.delete(id);
+  });
 }
 
 // Ejercicios de una plantilla, ordenados, con la ficha del ejercicio incluida.
@@ -282,7 +317,7 @@ export async function addTemplateExercise(templateId, exerciseId, values = {}) {
     templateId,
     exerciseId,
     order: existing.length,
-    targetSets: values.targetSets ?? 3,
+    targetSets: Math.min(100, Math.max(1, cleanNonNegativeInt(values.targetSets) ?? 3)),
     targetReps: repsMax ?? repsMin ?? null,
     targetRepsMin: repsMin,
     targetRepsMax: repsMax,
@@ -336,50 +371,59 @@ export async function getLastWorkoutForTemplate(templateId) {
 // ejercicio (igual que "+ Añadir serie"). El RIR nunca se prellena. La
 // plantilla no se modifica; la sesión creada es completamente independiente.
 export async function startWorkoutFromTemplate(templateId, { date }) {
-  const template = await getTemplate(templateId);
-  if (!template) throw new Error('Plantilla no encontrada');
-  const templateExercises = await getTemplateExercises(templateId);
+  // Transacción: esto crea 1 workout + N workoutExercises + M sets en una
+  // sola operación lógica ("empezar esta rutina") — una interrupción a
+  // mitad no debe dejar un entrenamiento con solo algunos ejercicios/series.
+  // El cuerpo va DIRECTAMENTE en el callback (no delegado a otra función
+  // async aparte) — Dexie solo sigue la "zona" de la transacción a través de
+  // la cadena de promesas real; llamar a una función separada rompe esa
+  // cadena y provoca "PrematureCommitError" en el navegador real.
+  return db.transaction('rw', [db.templates, db.templateExercises, db.exercises, db.workouts, db.workoutExercises, db.sets], async () => {
+    const template = await getTemplate(templateId);
+    if (!template) throw new Error('Plantilla no encontrada');
+    const templateExercises = await getTemplateExercises(templateId);
 
-  const workout = await createWorkout({ name: template.name, date });
-  await db.workouts.update(workout.id, { templateId });
+    const workout = await createWorkout({ name: template.name, date });
+    await db.workouts.update(workout.id, { templateId });
 
-  for (const te of templateExercises) {
-    const we = await addExerciseToWorkout(workout.id, te.exerciseId, {
-      targetRepsMin: te.targetRepsMin ?? te.targetReps,
-      targetRepsMax: te.targetRepsMax ?? te.targetReps,
-      targetRir: te.targetRir,
-      targetRestSeconds: te.targetRestSeconds,
-      targetRepsSequence: te.targetRepsSequence ?? null,
-      targetWeightSequence: te.targetWeightSequence ?? null,
-    });
-    const lastEntry = await getLastSessionForExercise(te.exerciseId);
-    const lastSets = lastEntry?.sets ?? [];
-    const setCount = Math.max(1, te.targetSets || 1);
-    const repsSequence = Array.isArray(te.targetRepsSequence) && te.targetRepsSequence.length ? te.targetRepsSequence : null;
-    const weightSequence = Array.isArray(te.targetWeightSequence) && te.targetWeightSequence.length ? te.targetWeightSequence : null;
-    // Rango uniforme (sin progresión por serie): el valor por defecto es el
-    // extremo INFERIOR, no el superior — ej. objetivo "8-12" -> se prellena 8.
-    const rangeDefaultReps = te.targetRepsMin ?? te.targetRepsMax ?? te.targetReps ?? null;
-    const defaultSetType = te.defaultSetType ?? 'normal';
-    for (let i = 0; i < setCount; i++) {
-      const isLastSet = i === setCount - 1;
-      const usesSpecialType = defaultSetType !== 'normal' && (!te.defaultLastSetOnly || isLastSet);
-      const plannedReps = repsSequence ? (repsSequence[i] ?? repsSequence[repsSequence.length - 1]) : rangeDefaultReps;
-      const plannedWeight = weightSequence ? (weightSequence[i] ?? weightSequence[weightSequence.length - 1]) : null;
-      await addSet(we.id, {
-        weight: lastSets[i]?.weight ?? plannedWeight,
-        weightKgPart: lastSets[i]?.weightKgPart ?? null,
-        weightLbPart: lastSets[i]?.weightLbPart ?? null,
-        barWeightKg: lastSets[i]?.barWeightKg ?? null,
-        plateWeightPerSideKg: lastSets[i]?.plateWeightPerSideKg ?? null,
-        reps: lastSets[i]?.reps ?? plannedReps,
-        type: usesSpecialType ? defaultSetType : 'normal',
-        restPauseExtra: usesSpecialType && defaultSetType === 'restpause' ? te.defaultRestPauseExtra : null,
-        dropSteps: usesSpecialType && defaultSetType === 'descendente' ? te.defaultDropSteps : null,
+    for (const te of templateExercises) {
+      const we = await addExerciseToWorkout(workout.id, te.exerciseId, {
+        targetRepsMin: te.targetRepsMin ?? te.targetReps,
+        targetRepsMax: te.targetRepsMax ?? te.targetReps,
+        targetRir: te.targetRir,
+        targetRestSeconds: te.targetRestSeconds,
+        targetRepsSequence: te.targetRepsSequence ?? null,
+        targetWeightSequence: te.targetWeightSequence ?? null,
       });
+      const lastEntry = await getLastSessionForExercise(te.exerciseId);
+      const lastSets = lastEntry?.sets ?? [];
+      const setCount = Math.max(1, te.targetSets || 1);
+      const repsSequence = Array.isArray(te.targetRepsSequence) && te.targetRepsSequence.length ? te.targetRepsSequence : null;
+      const weightSequence = Array.isArray(te.targetWeightSequence) && te.targetWeightSequence.length ? te.targetWeightSequence : null;
+      // Rango uniforme (sin progresión por serie): el valor por defecto es el
+      // extremo INFERIOR, no el superior — ej. objetivo "8-12" -> se prellena 8.
+      const rangeDefaultReps = te.targetRepsMin ?? te.targetRepsMax ?? te.targetReps ?? null;
+      const defaultSetType = te.defaultSetType ?? 'normal';
+      for (let i = 0; i < setCount; i++) {
+        const isLastSet = i === setCount - 1;
+        const usesSpecialType = defaultSetType !== 'normal' && (!te.defaultLastSetOnly || isLastSet);
+        const plannedReps = repsSequence ? (repsSequence[i] ?? repsSequence[repsSequence.length - 1]) : rangeDefaultReps;
+        const plannedWeight = weightSequence ? (weightSequence[i] ?? weightSequence[weightSequence.length - 1]) : null;
+        await addSet(we.id, {
+          weight: lastSets[i]?.weight ?? plannedWeight,
+          weightKgPart: lastSets[i]?.weightKgPart ?? null,
+          weightLbPart: lastSets[i]?.weightLbPart ?? null,
+          barWeightKg: lastSets[i]?.barWeightKg ?? null,
+          plateWeightPerSideKg: lastSets[i]?.plateWeightPerSideKg ?? null,
+          reps: lastSets[i]?.reps ?? plannedReps,
+          type: usesSpecialType ? defaultSetType : 'normal',
+          restPauseExtra: usesSpecialType && defaultSetType === 'restpause' ? te.defaultRestPauseExtra : null,
+          dropSteps: usesSpecialType && defaultSetType === 'descendente' ? te.defaultDropSteps : null,
+        });
+      }
     }
-  }
-  return workout;
+    return workout;
+  });
 }
 
 // ---------- Series ----------
@@ -389,6 +433,7 @@ export async function getSetsForWorkoutExercise(workoutExerciseId) {
 }
 
 export async function addSet(workoutExerciseId, values = {}) {
+  values = sanitizeSetFields(values);
   const existing = await db.sets.where('workoutExerciseId').equals(workoutExerciseId).toArray();
   const setNumber = existing.length + 1;
   const set = {
@@ -424,7 +469,7 @@ export async function addSet(workoutExerciseId, values = {}) {
 }
 
 export async function updateSet(id, changes) {
-  await db.sets.update(id, changes);
+  await db.sets.update(id, sanitizeSetFields(changes));
 }
 
 export async function deleteSet(id) {
@@ -471,12 +516,18 @@ export async function getLastSessionForExercise(exerciseId, { excludeWorkoutId }
 // ---------- Peso corporal ----------
 
 export async function addBodyWeight({ date, weightKg, notes = '' }) {
-  const entry = { id: newId(), date, weightKg, notes };
+  const entry = {
+    id: newId(),
+    date: requireValidDate(date, 'La fecha'),
+    weightKg: requirePositiveNumber(weightKg, 'El peso corporal'),
+    notes,
+  };
   await db.bodyWeight.add(entry);
   return entry;
 }
 
 export async function updateBodyWeight(id, changes) {
+  if ('weightKg' in changes) changes = { ...changes, weightKg: cleanNonNegativeNumber(changes.weightKg) ?? changes.weightKg };
   await db.bodyWeight.update(id, changes);
 }
 
@@ -509,7 +560,7 @@ export async function getMeasurementType(id) {
 
 export async function createMeasurementType({ name, unit = 'cm', bilateral = false }) {
   const existing = await db.measurementTypes.toArray();
-  const type = { id: newId(), name: name.trim(), unit, bilateral, enabled: true, order: existing.length };
+  const type = { id: newId(), name: requireNonEmptyString(name, 'El nombre de la medida'), unit, bilateral, enabled: true, order: existing.length };
   await db.measurementTypes.add(type);
   return type;
 }
@@ -523,12 +574,22 @@ export async function setMeasurementTypeEnabled(id, enabled) {
 }
 
 export async function deleteMeasurementType(id) {
-  await db.measurements.where('typeId').equals(id).delete();
-  await db.measurementTypes.delete(id);
+  await db.transaction('rw', [db.measurements, db.measurementTypes], async () => {
+    await db.measurements.where('typeId').equals(id).delete();
+    await db.measurementTypes.delete(id);
+  });
 }
 
 export async function addMeasurement({ typeId, date, value = null, valueLeft = null, valueRight = null, notes = '' }) {
-  const entry = { id: newId(), typeId, date, value, valueLeft, valueRight, notes };
+  const entry = {
+    id: newId(),
+    typeId,
+    date: requireValidDate(date, 'La fecha'),
+    value: cleanNonNegativeNumber(value),
+    valueLeft: cleanNonNegativeNumber(valueLeft),
+    valueRight: cleanNonNegativeNumber(valueRight),
+    notes,
+  };
   await db.measurements.add(entry);
   return entry;
 }
@@ -557,14 +618,16 @@ export async function getSkinfoldSite(id) {
 
 export async function createSkinfoldSite({ name, instructions = '' }) {
   const existing = await db.skinfoldSites.toArray();
-  const site = { id: newId(), name, instructions, order: existing.length };
+  const site = { id: newId(), name: requireNonEmptyString(name, 'El nombre del punto de pliegue'), instructions, order: existing.length };
   await db.skinfoldSites.add(site);
   return site;
 }
 
 export async function deleteSkinfoldSite(id) {
-  await db.skinfoldEntries.where('siteId').equals(id).delete();
-  await db.skinfoldSites.delete(id);
+  await db.transaction('rw', [db.skinfoldEntries, db.skinfoldSites], async () => {
+    await db.skinfoldEntries.where('siteId').equals(id).delete();
+    await db.skinfoldSites.delete(id);
+  });
 }
 
 // ---------- Barras ----------
@@ -579,7 +642,12 @@ export async function getBar(id) {
 
 export async function createBar({ name, weightKg }) {
   const existing = await db.bars.toArray();
-  const bar = { id: newId(), name: name.trim(), weightKg, order: existing.length };
+  const bar = {
+    id: newId(),
+    name: requireNonEmptyString(name, 'El nombre de la barra'),
+    weightKg: requirePositiveNumber(weightKg, 'El peso de la barra'),
+    order: existing.length,
+  };
   await db.bars.add(bar);
   return bar;
 }
@@ -589,13 +657,20 @@ export async function updateBar(id, changes) {
 }
 
 export async function deleteBar(id) {
-  await db.bars.delete(id);
-  const affected = (await db.exercises.toArray()).filter((e) => e.defaultBarId === id);
-  await Promise.all(affected.map((e) => db.exercises.update(e.id, { defaultBarId: null })));
+  await db.transaction('rw', [db.bars, db.exercises], async () => {
+    await db.bars.delete(id);
+    const affected = (await db.exercises.toArray()).filter((e) => e.defaultBarId === id);
+    await Promise.all(affected.map((e) => db.exercises.update(e.id, { defaultBarId: null })));
+  });
 }
 
 export async function addSkinfoldEntry({ siteId, date, valueMm }) {
-  const entry = { id: newId(), siteId, date, valueMm };
+  const entry = {
+    id: newId(),
+    siteId,
+    date: requireValidDate(date, 'La fecha'),
+    valueMm: requirePositiveNumber(valueMm, 'El pliegue'),
+  };
   await db.skinfoldEntries.add(entry);
   return entry;
 }
@@ -650,8 +725,26 @@ export async function exportAllData() {
   };
 }
 
+// Validación estructural mínima antes de tocar la base de datos actual — no
+// es una validación exhaustiva de cada fila (eso ya lo garantiza Dexie: si
+// una fila no cumple el esquema, bulkAdd lanza y la transacción entera se
+// deshace sola, sin dejar la base a medias), solo descarta de entrada un
+// archivo que claramente no es un backup de Pegasus Tracker (JSON al azar,
+// backup de otra app...) antes de intentar sustituir nada.
+function assertValidBackupStructure(backup) {
+  if (!backup || typeof backup !== 'object' || !backup.data || typeof backup.data !== 'object') {
+    throw new Error('El archivo no tiene el formato de un backup de Pegasus Tracker.');
+  }
+  const REQUIRED_TABLES = ['exercises', 'workouts', 'sets'];
+  for (const table of REQUIRED_TABLES) {
+    if (!(table in backup.data) || !Array.isArray(backup.data[table])) {
+      throw new Error('El archivo no tiene el formato de un backup de Pegasus Tracker.');
+    }
+  }
+}
+
 export async function importAllData(backup) {
-  if (!backup || !backup.data) throw new Error('Archivo de backup no válido');
+  assertValidBackupStructure(backup);
   await db.transaction('rw', TABLES.map((t) => db[t]), async () => {
     for (const table of TABLES) {
       await db[table].clear();
@@ -670,42 +763,57 @@ export async function importAllData(backup) {
 // pliegue se buscan por nombre y se crean si no existen todavía.
 // data: { bodyWeight: [{date, weightKg}], measurements: [{date, type, value?, valueLeft?, valueRight?}], skinfold: [{date, site, valueMm}] }
 export async function importProgressData(data) {
-  const result = { bodyWeight: 0, measurements: 0, skinfold: 0 };
+  const result = { bodyWeight: 0, measurements: 0, skinfold: 0, skipped: 0 };
 
+  // Cada fila se intenta por separado: una fecha o un valor mal formado en UNA
+  // fila (p.ej. una hoja de cálculo con un error de tecleo) no debe descartar
+  // el resto de filas válidas — se cuenta como omitida y se sigue con las demás.
   for (const entry of data.bodyWeight || []) {
-    await addBodyWeight({ date: entry.date, weightKg: entry.weightKg });
-    result.bodyWeight++;
+    try {
+      await addBodyWeight({ date: entry.date, weightKg: entry.weightKg });
+      result.bodyWeight++;
+    } catch {
+      result.skipped++;
+    }
   }
 
   const types = await listMeasurementTypes({ includeDisabled: true });
   const typeByName = new Map(types.map((t) => [t.name, t]));
   for (const entry of data.measurements || []) {
-    let type = typeByName.get(entry.type);
-    if (!type) {
-      const bilateral = entry.valueLeft !== undefined || entry.valueRight !== undefined;
-      type = await createMeasurementType({ name: entry.type, unit: 'cm', bilateral });
-      typeByName.set(entry.type, type);
+    try {
+      let type = typeByName.get(entry.type);
+      if (!type) {
+        const bilateral = entry.valueLeft !== undefined || entry.valueRight !== undefined;
+        type = await createMeasurementType({ name: entry.type, unit: 'cm', bilateral });
+        typeByName.set(entry.type, type);
+      }
+      await addMeasurement({
+        typeId: type.id,
+        date: entry.date,
+        value: entry.value ?? null,
+        valueLeft: entry.valueLeft ?? null,
+        valueRight: entry.valueRight ?? null,
+      });
+      result.measurements++;
+    } catch {
+      result.skipped++;
     }
-    await addMeasurement({
-      typeId: type.id,
-      date: entry.date,
-      value: entry.value ?? null,
-      valueLeft: entry.valueLeft ?? null,
-      valueRight: entry.valueRight ?? null,
-    });
-    result.measurements++;
   }
 
   const sites = await listSkinfoldSites();
   const siteByName = new Map(sites.map((s) => [s.name, s]));
   for (const entry of data.skinfold || []) {
-    let site = siteByName.get(entry.site);
-    if (!site) {
-      site = await createSkinfoldSite({ name: entry.site });
-      siteByName.set(entry.site, site);
+    try {
+      let site = siteByName.get(entry.site);
+      if (!site) {
+        site = await createSkinfoldSite({ name: entry.site });
+        siteByName.set(entry.site, site);
+      }
+      await addSkinfoldEntry({ siteId: site.id, date: entry.date, valueMm: entry.valueMm });
+      result.skinfold++;
+    } catch {
+      result.skipped++;
     }
-    await addSkinfoldEntry({ siteId: site.id, date: entry.date, valueMm: entry.valueMm });
-    result.skinfold++;
   }
 
   return result;
