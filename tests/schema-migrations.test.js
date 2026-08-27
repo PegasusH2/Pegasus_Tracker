@@ -21,8 +21,8 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
   test('crea la base de datos directamente en la última versión sin lanzar', async () => {
     const schema = await import(`../js/db/schema.js?fresh1=${Date.now()}`);
     await schema.db.exercises.toArray(); // fuerza la apertura real
-    assert.equal(schema.SCHEMA_VERSION, 15);
-    assert.equal(schema.db.verno, 15);
+    assert.equal(schema.SCHEMA_VERSION, 16);
+    assert.equal(schema.db.verno, 16);
   });
 
   test('la tabla "syncQueue" existe y está vacía en una instalación fresca', async () => {
@@ -44,7 +44,7 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
 });
 
 describe('Actualización desde v1 (usuario con la app instalada desde el principio)', () => {
-  test('sube de v1 a v15 sin lanzar y preservando los datos ya guardados', async () => {
+  test('sube de v1 a v16 sin lanzar y preservando los datos ya guardados', async () => {
     // 1) Crea la base de datos tal cual era en v1, con datos reales de un
     // "usuario antiguo", SIN pasar por schema.js todavía.
     const oldDb = new Dexie(DB_NAME);
@@ -76,7 +76,7 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
     // ejecutando cada .upgrade() de por medio.
     const schema = await import(`../js/db/schema.js?upgrade1=${Date.now()}`);
     await schema.db.exercises.toArray();
-    assert.equal(schema.db.verno, 15);
+    assert.equal(schema.db.verno, 16);
 
     // 3) El ejercicio y el entrenamiento originales siguen ahí, intactos.
     const exercise = await schema.db.exercises.get('ex1');
@@ -251,5 +251,57 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
 
     // El ejercicio sigue sin existir localmente — el stub es solo para el FK remoto.
     assert.equal(await schema.db.exercises.get('ex-borrado-a'), undefined);
+  });
+
+  test('v16 resetea el backoff de TODA la cola pendiente/fallida, no solo de las filas con payload corrupto', async () => {
+    // Filas "colaterales": su payload siempre fue válido, pero llevan
+    // fallando porque iban en el MISMO lote que una fila corrupta (ver v14)
+    // — sin este reset se quedan esperando su propio backoff escalonado en
+    // vez de subir todas juntas en la siguiente sincronización.
+    const oldDb = new Dexie(DB_NAME);
+    oldDb.version(15).stores({
+      exercises: 'id, name, muscleGroup, archived, isFavorite',
+      workouts: 'id, date, templateId',
+      workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+      sets: 'id, workoutExerciseId, setNumber',
+      bodyWeight: 'id, date',
+      measurementTypes: 'id, order',
+      measurements: 'id, typeId, [typeId+date]',
+      skinfoldSites: 'id, order',
+      skinfoldEntries: 'id, siteId, [siteId+date]',
+      settings: 'key',
+      templates: 'id, order',
+      templateExercises: 'id, templateId, [templateId+order]',
+      bars: 'id, order',
+      syncQueue: 'id, status, entity, entityId, [status+createdAt], [entity+entityId]',
+    });
+    await oldDb.open();
+    await oldDb.syncQueue.add({
+      id: 'q-colateral', entity: 'workouts', entityId: 'w-bueno', operation: 'create',
+      payload: { id: 'w-bueno', date: '2026-08-19' }, status: 'failed', attempts: 6,
+      createdAt: '2026-01-01T00:00:00.000Z', lastAttemptAt: '2026-08-27T00:00:00.000Z',
+      lastError: 'fallo simulado de red (persistente)',
+    });
+    // Una ya sincronizada no debe tocarse — no está pending/failed.
+    await oldDb.syncQueue.add({
+      id: 'q-ya-sincronizada', entity: 'exercises', entityId: 'ex-ok', operation: 'create',
+      payload: { id: 'ex-ok' }, status: 'synced', attempts: 1,
+      createdAt: '2026-01-01T00:00:00.000Z', lastAttemptAt: '2026-01-01T00:00:01.000Z', lastError: null,
+    });
+    oldDb.close();
+
+    const schema = await import(`../js/db/schema.js?upgrade16=${Date.now()}`);
+    await schema.db.exercises.toArray();
+
+    const colateral = await schema.db.syncQueue.get('q-colateral');
+    assert.equal(colateral.status, 'pending');
+    assert.equal(colateral.attempts, 0);
+    assert.equal(colateral.lastAttemptAt, null);
+    assert.equal(colateral.lastError, null);
+    assert.deepEqual(colateral.payload, { id: 'w-bueno', date: '2026-08-19' }); // el payload no cambia, solo el backoff
+
+    const yaSincronizada = await schema.db.syncQueue.get('q-ya-sincronizada');
+    assert.equal(yaSincronizada.status, 'synced'); // sin tocar
+    assert.equal(yaSincronizada.attempts, 1);
   });
 });

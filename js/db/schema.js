@@ -481,7 +481,43 @@ db.version(15).stores({
   }
 });
 
-export const SCHEMA_VERSION = 15;
+// v16: las v14/v15 solo resetean el backoff de las entradas de la cola con
+// el payload realmente corrupto (templateId/exerciseId colgante) — pero
+// TODAS las demás filas que iban en el mismo lote de subida (otros
+// workouts, workoutExercises, sets) llevaban fallando junto a ellas desde
+// hace tiempo, y ya acumularon reintentos con backoff exponencial (hasta 5
+// minutos entre intentos, ver backoffDelayMs en sync.js). Sin esto, tras
+// arreglar la causa real, esas filas seguían esperando su turno de forma
+// escalonada en vez de subir todas juntas en la siguiente sincronización.
+// Reset general: da a TODA la cola pendiente/fallida una oportunidad
+// inmediata — no cambia ningún dato, solo el estado de reintento.
+db.version(16).stores({
+  exercises: 'id, name, muscleGroup, archived, isFavorite',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+  syncQueue: 'id, status, entity, entityId, [status+createdAt], [entity+entityId]',
+}).upgrade(async (tx) => {
+  await tx.table('syncQueue')
+    .where('status').anyOf('pending', 'failed')
+    .modify((row) => {
+      row.status = 'pending';
+      row.attempts = 0;
+      row.lastAttemptAt = null;
+      row.lastError = null;
+    });
+});
+
+export const SCHEMA_VERSION = 16;
 
 // Tablas cuyas filas se sincronizan con Supabase cuando hay sesión activa —
 // ver docs/supabase-sync-design.md para la decisión de alcance (exercises/
