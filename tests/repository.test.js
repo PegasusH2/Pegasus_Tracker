@@ -164,6 +164,32 @@ describe('importAllData — rechaza un archivo que no es un backup real antes de
     const backup = { data: { exercises: [], workouts: [], sets: [] } };
     await assert.doesNotReject(() => repo.importAllData(backup));
   });
+
+  test('un backup con workout.templateId apuntando a una plantilla que no viene en el propio backup se limpia al importar', async () => {
+    // Reproduce restaurar un backup exportado ANTES del fix de
+    // deleteTemplate() — el workout sigue teniendo el templateId colgante
+    // en el JSON. Una migración de esquema no vuelve a correr sobre datos
+    // importados (no cambia de versión), así que importAllData tiene que
+    // repararlo él mismo o el bloqueo de sincronización reaparece.
+    const backup = {
+      data: {
+        exercises: [],
+        templates: [{ id: 'tpl-1', name: 'Rutina que sí existe', order: 0 }],
+        workouts: [
+          { id: 'w-ok', date: '2026-01-01', name: 'Con plantilla real', notes: '', completed: true, templateId: 'tpl-1' },
+          { id: 'w-colgante', date: '2026-01-02', name: 'Con plantilla borrada', notes: '', completed: true, templateId: 'tpl-borrada-hace-tiempo' },
+        ],
+        sets: [],
+      },
+    };
+    await repo.importAllData(backup);
+
+    const ok = await db.workouts.get('w-ok');
+    assert.equal(ok.templateId, 'tpl-1'); // una referencia válida no se toca
+
+    const colgante = await db.workouts.get('w-colgante');
+    assert.equal(colgante.templateId, null);
+  });
 });
 
 describe('importProgressData — una fila inválida no descarta el resto', () => {

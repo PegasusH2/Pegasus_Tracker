@@ -941,6 +941,21 @@ export async function importAllData(backup) {
         await db[table].bulkAdd(rows);
       }
     }
+
+    // Un backup exportado ANTES del fix de deleteTemplate() (ver schema.js
+    // v14) puede traer workouts con templateId apuntando a una plantilla que
+    // ya no existe. Una migración de esquema NUNCA vuelve a ejecutarse sobre
+    // datos restaurados por import (solo corre al cruzar una versión, y
+    // aquí no cambia ninguna) — así que sin esto, restaurar un backup
+    // antiguo reintroduce el mismo bloqueo de sincronización que arreglaba
+    // la migración, aunque el esquema ya esté al día.
+    const templateIds = new Set((await db.templates.toArray()).map((t) => t.id));
+    const now = new Date().toISOString();
+    for (const w of await db.workouts.toArray()) {
+      if (w.templateId && !templateIds.has(w.templateId)) {
+        await db.workouts.update(w.id, { templateId: null, updatedAt: now });
+      }
+    }
   });
 }
 
