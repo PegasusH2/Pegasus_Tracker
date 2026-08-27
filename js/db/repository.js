@@ -401,10 +401,22 @@ export async function updateTemplate(id, changes) {
 }
 
 export async function deleteTemplate(id) {
-  await db.transaction('rw', [db.templateExercises, db.templates, db.syncQueue], async () => {
+  // workouts.templateId también se limpia aquí: en remoto (Supabase)
+  // template_id es una FK real hacia templates(id) — un workout que quedara
+  // apuntando a una plantilla ya borrada haría fallar TODO el lote de subida
+  // de workouts (y en cascada workoutExercises/sets, que dependen de que su
+  // workout ya exista en remoto) en cada intento de sincronización, sin fin.
+  await db.transaction('rw', [db.templateExercises, db.templates, db.workouts, db.syncQueue], async () => {
     const tes = await db.templateExercises.where('templateId').equals(id).toArray();
     await db.templateExercises.bulkDelete(tes.map((t) => t.id));
     for (const te of tes) await enqueueChange('templateExercises', te.id, 'delete', null);
+
+    const affectedWorkouts = await db.workouts.where('templateId').equals(id).toArray();
+    for (const w of affectedWorkouts) {
+      await db.workouts.update(w.id, { templateId: null, updatedAt: new Date().toISOString() });
+      await enqueueUpdate('workouts', w.id);
+    }
+
     await db.templates.delete(id);
     await enqueueChange('templates', id, 'delete', null);
   });

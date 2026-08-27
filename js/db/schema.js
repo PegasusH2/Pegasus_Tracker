@@ -372,7 +372,56 @@ db.version(13).stores({
   }
 });
 
-export const SCHEMA_VERSION = 13;
+// v14: corrige workouts que quedaron apuntando (workout.templateId) a una
+// plantilla ya borrada — bug encontrado al depurar por qué la sincronización
+// nunca subía ningún entrenamiento: en Supabase template_id es una FK real,
+// así que un solo workout con ese id colgante hacía fallar TODO el lote de
+// subida de workouts (y en cascada workoutExercises/sets) en cada intento,
+// para siempre. deleteTemplate() ya limpia esto de aquí en adelante (ver
+// repository.js); esta migración repara los workouts que quedaron así ANTES
+// de ese fix. Si el workout ya tenía una entrada pendiente en la cola de
+// sync (falló repetidamente con el templateId colgante), se refresca con el
+// payload corregido para que el próximo intento tenga éxito en vez de
+// repetir el mismo error.
+db.version(14).stores({
+  exercises: 'id, name, muscleGroup, archived, isFavorite',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+  syncQueue: 'id, status, entity, entityId, [status+createdAt], [entity+entityId]',
+}).upgrade(async (tx) => {
+  const templates = await tx.table('templates').toArray();
+  const templateIds = new Set(templates.map((t) => t.id));
+  const now = new Date().toISOString();
+  const workouts = await tx.table('workouts').toArray();
+  for (const w of workouts) {
+    if (!w.templateId || templateIds.has(w.templateId)) continue;
+    await tx.table('workouts').update(w.id, { templateId: null, updatedAt: now });
+    const queued = await tx.table('syncQueue')
+      .where('[entity+entityId]').equals(['workouts', w.id])
+      .and((q) => q.status === 'pending' || q.status === 'failed')
+      .first();
+    if (queued) {
+      await tx.table('syncQueue').update(queued.id, {
+        payload: { ...w, templateId: null, updatedAt: now },
+        status: 'pending',
+        attempts: 0,
+        lastError: null,
+      });
+    }
+  }
+});
+
+export const SCHEMA_VERSION = 14;
 
 // Tablas cuyas filas se sincronizan con Supabase cuando hay sesión activa —
 // ver docs/supabase-sync-design.md para la decisión de alcance (exercises/

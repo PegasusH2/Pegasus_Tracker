@@ -21,8 +21,8 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
   test('crea la base de datos directamente en la última versión sin lanzar', async () => {
     const schema = await import(`../js/db/schema.js?fresh1=${Date.now()}`);
     await schema.db.exercises.toArray(); // fuerza la apertura real
-    assert.equal(schema.SCHEMA_VERSION, 13);
-    assert.equal(schema.db.verno, 13);
+    assert.equal(schema.SCHEMA_VERSION, 14);
+    assert.equal(schema.db.verno, 14);
   });
 
   test('la tabla "syncQueue" existe y está vacía en una instalación fresca', async () => {
@@ -44,7 +44,7 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
 });
 
 describe('Actualización desde v1 (usuario con la app instalada desde el principio)', () => {
-  test('sube de v1 a v13 sin lanzar y preservando los datos ya guardados', async () => {
+  test('sube de v1 a v14 sin lanzar y preservando los datos ya guardados', async () => {
     // 1) Crea la base de datos tal cual era en v1, con datos reales de un
     // "usuario antiguo", SIN pasar por schema.js todavía.
     const oldDb = new Dexie(DB_NAME);
@@ -76,7 +76,7 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
     // ejecutando cada .upgrade() de por medio.
     const schema = await import(`../js/db/schema.js?upgrade1=${Date.now()}`);
     await schema.db.exercises.toArray();
-    assert.equal(schema.db.verno, 13);
+    assert.equal(schema.db.verno, 14);
 
     // 3) El ejercicio y el entrenamiento originales siguen ahí, intactos.
     const exercise = await schema.db.exercises.get('ex1');
@@ -148,5 +148,53 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
     const schema = await import(`../js/db/schema.js?upgrade2=${Date.now()}`);
     const set = await schema.db.sets.get('s-empty');
     assert.equal(set.done, false);
+  });
+
+  test('v14 limpia workouts.templateId colgante (plantilla ya borrada) y refresca su entrada pendiente en la cola', async () => {
+    // Reproduce el estado real que impedía sincronizar entrenamientos: un
+    // workout con templateId apuntando a una plantilla que ya no existe (el
+    // bug de deleteTemplate() no limpiando esta referencia), con una entrada
+    // en syncQueue que ya había fallado con ese payload corrupto.
+    const oldDb = new Dexie(DB_NAME);
+    oldDb.version(13).stores({
+      exercises: 'id, name, muscleGroup, archived, isFavorite',
+      workouts: 'id, date, templateId',
+      workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+      sets: 'id, workoutExerciseId, setNumber',
+      bodyWeight: 'id, date',
+      measurementTypes: 'id, order',
+      measurements: 'id, typeId, [typeId+date]',
+      skinfoldSites: 'id, order',
+      skinfoldEntries: 'id, siteId, [siteId+date]',
+      settings: 'key',
+      templates: 'id, order',
+      templateExercises: 'id, templateId, [templateId+order]',
+      bars: 'id, order',
+      syncQueue: 'id, status, entity, entityId, [status+createdAt], [entity+entityId]',
+    });
+    await oldDb.open();
+    await oldDb.workouts.add({
+      id: 'w-orphan', date: '2026-01-01', name: 'Pierna', notes: '', completed: false,
+      templateId: 'template-que-ya-no-existe', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await oldDb.syncQueue.add({
+      id: 'q1', entity: 'workouts', entityId: 'w-orphan', operation: 'update',
+      payload: { id: 'w-orphan', templateId: 'template-que-ya-no-existe' },
+      status: 'failed', attempts: 6, createdAt: '2026-01-01T00:00:00.000Z',
+      lastAttemptAt: '2026-01-01T00:00:00.000Z', lastError: 'violates foreign key constraint',
+    });
+    oldDb.close();
+
+    const schema = await import(`../js/db/schema.js?upgrade14=${Date.now()}`);
+    await schema.db.exercises.toArray();
+
+    const workout = await schema.db.workouts.get('w-orphan');
+    assert.equal(workout.templateId, null);
+
+    const queued = await schema.db.syncQueue.get('q1');
+    assert.equal(queued.status, 'pending');
+    assert.equal(queued.attempts, 0);
+    assert.equal(queued.lastError, null);
+    assert.equal(queued.payload.templateId, null);
   });
 });
