@@ -421,7 +421,67 @@ db.version(14).stores({
   }
 });
 
-export const SCHEMA_VERSION = 14;
+// v15: mismo problema que v14 pero con exercises — borrar un ejercicio
+// (repository.js:deleteExercise) deliberadamente NO borra los workouts/
+// plantillas pasados que lo usaron (ver exercise-library.js), pero
+// workoutExercises.exerciseId/templateExercises.exerciseId son NOT NULL con
+// FK real en Supabase. Una referencia colgante a un ejercicio ya borrado
+// bloqueaba para siempre el lote de subida de workoutExercises/
+// templateExercises (y en cascada sets). deleteExercise() ya evita esto de
+// aquí en adelante subiendo un "stub" tombstoneado en vez de un delete
+// simple; esta migración repara las entradas de la cola que ya habían
+// fallado así ANTES de ese fix, con el mismo stub (nombre genérico — el
+// original ya no existe localmente, se perdió al borrar el ejercicio).
+db.version(15).stores({
+  exercises: 'id, name, muscleGroup, archived, isFavorite',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+  syncQueue: 'id, status, entity, entityId, [status+createdAt], [entity+entityId]',
+}).upgrade(async (tx) => {
+  const existingIds = new Set((await tx.table('exercises').toArray()).map((e) => e.id));
+  const referenced = new Set();
+  for (const we of await tx.table('workoutExercises').toArray()) {
+    if (we.exerciseId && !existingIds.has(we.exerciseId)) referenced.add(we.exerciseId);
+  }
+  for (const te of await tx.table('templateExercises').toArray()) {
+    if (te.exerciseId && !existingIds.has(te.exerciseId)) referenced.add(te.exerciseId);
+  }
+  const now = new Date().toISOString();
+  for (const id of referenced) {
+    const stub = {
+      id, name: 'Ejercicio eliminado', muscleGroup: '', notes: '', loadMode: 'total',
+      equipmentType: 'other', defaultBarId: null, archived: true, isFavorite: false,
+      createdAt: now, updatedAt: now, deletedAt: now,
+    };
+    const queued = await tx.table('syncQueue')
+      .where('[entity+entityId]').equals(['exercises', id])
+      .and((q) => q.status === 'pending' || q.status === 'failed')
+      .first();
+    if (queued) {
+      await tx.table('syncQueue').update(queued.id, {
+        operation: 'update', payload: stub, status: 'pending', attempts: 0, lastError: null,
+      });
+    } else {
+      await tx.table('syncQueue').add({
+        id: newId(), entity: 'exercises', entityId: id, operation: 'update',
+        payload: stub, status: 'pending', attempts: 0, createdAt: now,
+        lastAttemptAt: null, lastError: null,
+      });
+    }
+  }
+});
+
+export const SCHEMA_VERSION = 15;
 
 // Tablas cuyas filas se sincronizan con Supabase cuando hay sesión activa —
 // ver docs/supabase-sync-design.md para la decisión de alcance (exercises/

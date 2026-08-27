@@ -144,6 +144,38 @@ describe('Borrado en cascada — cada fila afectada recibe su propio tombstone',
     assert.equal(byEntity.workoutExercises, 'delete');
     assert.equal(byEntity.sets, 'delete');
   });
+
+  test('borrar un ejercicio todavía usado por un workout pasado se sube tombstoneado (upsert), no como delete simple', async () => {
+    repo.setSyncActive(true);
+    const ex = await repo.createExercise({ name: 'Sentadilla' });
+    const w = await repo.createWorkout({ date: '2026-01-01' });
+    await repo.addExerciseToWorkout(w.id, ex.id);
+    await sync.syncNow({ manual: true }); // sube todo, vacía la cola
+
+    await repo.deleteExercise(ex.id);
+
+    const queue = await db.syncQueue.toArray();
+    assert.equal(queue.length, 1);
+    assert.equal(queue[0].entity, 'exercises');
+    assert.equal(queue[0].operation, 'update'); // no 'delete': hace falta que la fila EXISTA en remoto para el FK
+    assert.ok(queue[0].payload.deletedAt);
+
+    await sync.syncNow({ manual: true });
+    const remote = fakeSupabase.tables.exercises.get(ex.id);
+    assert.ok(remote.deleted_at); // la fila remota existe, tombstoneada — el FK de workoutExercises sigue satisfecho
+  });
+
+  test('borrar un ejercicio que ya no usa ningún workout se sube como delete simple', async () => {
+    repo.setSyncActive(true);
+    const ex = await repo.createExercise({ name: 'Ejercicio sin usar' });
+    await sync.syncNow({ manual: true });
+
+    await repo.deleteExercise(ex.id);
+
+    const queue = await db.syncQueue.toArray();
+    assert.equal(queue.length, 1);
+    assert.equal(queue[0].operation, 'delete');
+  });
 });
 
 describe('syncNow — subida y bajada contra el Supabase simulado', () => {
@@ -293,5 +325,21 @@ describe('Migración de datos locales al crear/iniciar sesión', () => {
     assert.ok(await db.exercises.get(ex.id));
     assert.ok(await db.workouts.get(w.id));
     assert.equal(settings.isLocalDataMigrated(), true);
+  });
+
+  test('migrateLocalDataToAccount sube un stub tombstoneado para ejercicios ya borrados pero aún referenciados', async () => {
+    // Un ejercicio borrado (deleteExercise) deliberadamente no borra los
+    // workoutExercises/templateExercises pasados que lo usaron — simula ese
+    // estado directamente, sin pasar por deleteExercise.
+    const w = await repo.createWorkout({ date: '2026-03-01' });
+    await db.workoutExercises.add({ id: 'we-orphan', workoutId: w.id, exerciseId: 'ex-ya-borrado', order: 0 });
+
+    await sync.migrateLocalDataToAccount();
+
+    const stub = fakeSupabase.tables.exercises.get('ex-ya-borrado');
+    assert.ok(stub, 'debe subirse un stub para satisfacer la FK remota de exercise_id');
+    assert.ok(stub.deleted_at);
+    assert.equal(await db.exercises.get('ex-ya-borrado'), undefined); // sigue sin existir localmente
+    assert.ok(fakeSupabase.tables.workout_exercises.has('we-orphan')); // y ahora SÍ pudo subir
   });
 });

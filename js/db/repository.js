@@ -173,9 +173,31 @@ export async function setExerciseFavorite(id, isFavorite) {
   await enqueueUpdate('exercises', id);
 }
 
+// Borrar un ejercicio NUNCA borra los entrenamientos/plantillas pasados que
+// lo usaron (ver exercise-library.js, aviso explícito al usuario) — pero en
+// remoto exercise_id es NOT NULL con FK real en workoutExercises/
+// templateExercises. Si ese ejercicio se subiera con un 'delete' normal
+// (que solo actualiza deleted_at de una fila que además puede no haber
+// llegado a existir nunca en remoto), esas referencias romperían la FK y
+// bloquearían para siempre el lote entero de subida. Si todavía hay algo
+// que lo referencia, se sube (upsert) YA tombstoneado en un solo paso: la
+// fila remota existe lo justo para no romper el FK, y sigue sin existir
+// localmente ni en el resto de la app.
 export async function deleteExercise(id) {
+  const exercise = await db.exercises.get(id);
+  // templateExercises no tiene exerciseId indexado (solo templateId) — se
+  // recorre entera en vez de usar .where(), no merece la pena un índice
+  // nuevo solo para esta comprobación puntual.
+  const usedInTemplates = (await db.templateExercises.toArray()).some((te) => te.exerciseId === id);
+  const stillReferenced = !!exercise && (
+    (await db.workoutExercises.where('exerciseId').equals(id).count()) > 0 || usedInTemplates
+  );
   await db.exercises.delete(id);
-  await enqueueDelete('exercises', id);
+  if (stillReferenced) {
+    await enqueueChange('exercises', id, 'update', { ...exercise, deletedAt: new Date().toISOString() });
+  } else {
+    await enqueueDelete('exercises', id);
+  }
 }
 
 // Ejercicios usados en los entrenamientos más recientes, sin repetir, en

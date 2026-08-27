@@ -21,8 +21,8 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
   test('crea la base de datos directamente en la última versión sin lanzar', async () => {
     const schema = await import(`../js/db/schema.js?fresh1=${Date.now()}`);
     await schema.db.exercises.toArray(); // fuerza la apertura real
-    assert.equal(schema.SCHEMA_VERSION, 14);
-    assert.equal(schema.db.verno, 14);
+    assert.equal(schema.SCHEMA_VERSION, 15);
+    assert.equal(schema.db.verno, 15);
   });
 
   test('la tabla "syncQueue" existe y está vacía en una instalación fresca', async () => {
@@ -44,7 +44,7 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
 });
 
 describe('Actualización desde v1 (usuario con la app instalada desde el principio)', () => {
-  test('sube de v1 a v14 sin lanzar y preservando los datos ya guardados', async () => {
+  test('sube de v1 a v15 sin lanzar y preservando los datos ya guardados', async () => {
     // 1) Crea la base de datos tal cual era en v1, con datos reales de un
     // "usuario antiguo", SIN pasar por schema.js todavía.
     const oldDb = new Dexie(DB_NAME);
@@ -76,7 +76,7 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
     // ejecutando cada .upgrade() de por medio.
     const schema = await import(`../js/db/schema.js?upgrade1=${Date.now()}`);
     await schema.db.exercises.toArray();
-    assert.equal(schema.db.verno, 14);
+    assert.equal(schema.db.verno, 15);
 
     // 3) El ejercicio y el entrenamiento originales siguen ahí, intactos.
     const exercise = await schema.db.exercises.get('ex1');
@@ -196,5 +196,60 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
     assert.equal(queued.attempts, 0);
     assert.equal(queued.lastError, null);
     assert.equal(queued.payload.templateId, null);
+  });
+
+  test('v15 repara referencias colgantes a un ejercicio ya borrado, con y sin entrada previa en la cola', async () => {
+    // we-orphan-a: su exerciseId ya no existe y SÍ tenía una entrada en la
+    // cola (el 'delete' simple que enqueueaba el deleteExercise() de antes
+    // del fix) — debe convertirse en un 'update' con el stub tombstoneado.
+    // we-orphan-b: mismo caso pero SIN entrada previa en la cola (se borró
+    // el ejercicio sin sesión activa en su momento) — debe crearse una nueva.
+    const oldDb = new Dexie(DB_NAME);
+    oldDb.version(14).stores({
+      exercises: 'id, name, muscleGroup, archived, isFavorite',
+      workouts: 'id, date, templateId',
+      workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+      sets: 'id, workoutExerciseId, setNumber',
+      bodyWeight: 'id, date',
+      measurementTypes: 'id, order',
+      measurements: 'id, typeId, [typeId+date]',
+      skinfoldSites: 'id, order',
+      skinfoldEntries: 'id, siteId, [siteId+date]',
+      settings: 'key',
+      templates: 'id, order',
+      templateExercises: 'id, templateId, [templateId+order]',
+      bars: 'id, order',
+      syncQueue: 'id, status, entity, entityId, [status+createdAt], [entity+entityId]',
+    });
+    await oldDb.open();
+    await oldDb.workoutExercises.add({ id: 'we-orphan-a', workoutId: 'w1', exerciseId: 'ex-borrado-a', order: 0 });
+    await oldDb.workoutExercises.add({ id: 'we-orphan-b', workoutId: 'w1', exerciseId: 'ex-borrado-b', order: 1 });
+    await oldDb.syncQueue.add({
+      id: 'q-ex-a', entity: 'exercises', entityId: 'ex-borrado-a', operation: 'delete',
+      payload: null, status: 'failed', attempts: 6, createdAt: '2026-01-01T00:00:00.000Z',
+      lastAttemptAt: '2026-01-01T00:00:00.000Z', lastError: 'violates foreign key constraint',
+    });
+    oldDb.close();
+
+    const schema = await import(`../js/db/schema.js?upgrade15=${Date.now()}`);
+    await schema.db.exercises.toArray();
+
+    const queuedA = await schema.db.syncQueue.get('q-ex-a');
+    assert.equal(queuedA.operation, 'update');
+    assert.equal(queuedA.status, 'pending');
+    assert.equal(queuedA.attempts, 0);
+    assert.equal(queuedA.payload.id, 'ex-borrado-a');
+    assert.equal(queuedA.payload.name, 'Ejercicio eliminado');
+    assert.ok(queuedA.payload.deletedAt);
+
+    const queuedB = await schema.db.syncQueue
+      .where('[entity+entityId]').equals(['exercises', 'ex-borrado-b']).first();
+    assert.ok(queuedB, 'debe crearse una entrada nueva para el ejercicio sin entrada previa');
+    assert.equal(queuedB.operation, 'update');
+    assert.equal(queuedB.payload.id, 'ex-borrado-b');
+    assert.ok(queuedB.payload.deletedAt);
+
+    // El ejercicio sigue sin existir localmente — el stub es solo para el FK remoto.
+    assert.equal(await schema.db.exercises.get('ex-borrado-a'), undefined);
   });
 });

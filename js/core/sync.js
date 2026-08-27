@@ -279,8 +279,35 @@ export async function migrateLocalDataToAccount() {
       await repo.enqueueCreate(table, row);
     }
   }
+  await enqueueOrphanedExerciseStubs();
   await settings.setLocalDataMigrated(true);
   await syncNow({ manual: true });
+}
+
+// Un ejercicio borrado (ver repository.js:deleteExercise) puede seguir
+// referenciado por workoutExercises/templateExercises pasados aunque ya no
+// exista en db.exercises — en remoto exercise_id es NOT NULL con FK real,
+// así que sin esto el lote entero de esas tablas fallaría al subir para
+// siempre. Se crea un "stub" tombstoneado con el mismo id, solo para
+// satisfacer la FK; el nombre original ya no se puede recuperar (se perdió
+// al borrarlo, tal y como se le avisó al usuario al hacerlo).
+async function enqueueOrphanedExerciseStubs() {
+  const existingIds = new Set((await db.exercises.toArray()).map((e) => e.id));
+  const referenced = new Set();
+  for (const we of await db.workoutExercises.toArray()) {
+    if (we.exerciseId && !existingIds.has(we.exerciseId)) referenced.add(we.exerciseId);
+  }
+  for (const te of await db.templateExercises.toArray()) {
+    if (te.exerciseId && !existingIds.has(te.exerciseId)) referenced.add(te.exerciseId);
+  }
+  const now = new Date().toISOString();
+  for (const id of referenced) {
+    await repo.enqueueCreate('exercises', {
+      id, name: 'Ejercicio eliminado', muscleGroup: '', notes: '', loadMode: 'total',
+      equipmentType: 'other', defaultBarId: null, archived: true, isFavorite: false,
+      createdAt: now, updatedAt: now, deletedAt: now,
+    });
+  }
 }
 
 let debounceTimer = null;
