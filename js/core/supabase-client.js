@@ -10,12 +10,13 @@
 // la "service_role key" (esa sí es secreta y nunca debe salir del backend).
 import { supabaseStorageAdapter } from './supabase-storage-adapter.js';
 
-// EDITA ESTOS DOS VALORES tras crear tu proyecto en https://supabase.com y
-// ejecutar supabase/schema.sql en su SQL editor (Settings > API > Project
-// URL / anon public key). Vacíos por defecto = la app funciona en modo local
-// puro (sin cuenta), exactamente igual que antes de esta función.
-const DEFAULT_SUPABASE_URL = '';
-const DEFAULT_SUPABASE_ANON_KEY = '';
+// Proyecto: "Pegasus Tracker Project" (org "Pegasus Org"), supabase/schema.sql
+// ya ejecutado (11 tablas + RLS activo, verificado). La clave de abajo es la
+// "publishable key" (sustituye a la antigua "anon key" en el nuevo sistema
+// de claves de Supabase) — sigue siendo pública por diseño, la protección
+// real es RLS. Nunca la "secret key" (equivalente a la antigua service_role).
+const DEFAULT_SUPABASE_URL = 'https://vftvabshqcxnzgxthisv.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_nx_3bj5brR6nWEvw2J9zpA_P2NNDB0s';
 
 let supabaseUrl = DEFAULT_SUPABASE_URL;
 let supabaseAnonKey = DEFAULT_SUPABASE_ANON_KEY;
@@ -48,7 +49,12 @@ export function getSupabaseClient() {
       storage: supabaseStorageAdapter,
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: false,
+      // PKCE en vez de implicit: el enlace de "olvidé mi contraseña" vuelve
+      // con un ?code=... en la query string, NUNCA en el hash — el router
+      // de la app (js/app.js) usa location.hash para navegar, así que un
+      // flujo implicit (que añade #access_token=...) chocaría con él.
+      flowType: 'pkce',
+      detectSessionInUrl: true,
     },
   });
   return client;

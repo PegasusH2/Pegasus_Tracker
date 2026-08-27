@@ -20,6 +20,7 @@ import { NAV_ICONS } from './core/ui.js';
 import { on, toast } from './core/store.js';
 import * as settings from './core/settings.js';
 import { initSync } from './core/sync.js';
+import { initAuthListener } from './core/auth.js';
 
 const ALL_TABS = [
   { key: 'home', label: 'Inicio', icon: NAV_ICONS.home, path: '/home' },
@@ -149,6 +150,8 @@ function renderBottomNav(activeTab) {
   ajustesLink?.addEventListener('click', handleSettingsIconTap);
 }
 
+on('auth:recovery', () => navigate('/ajustes/cuenta'));
+
 on('prefs:changed', ({ key }) => {
   if (key === 'progressSections') renderBottomNav(currentTab);
 });
@@ -213,6 +216,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   // El listener se registra DESPUÉS de renderShell() para que #view/#bottom-nav
   // ya existan cuando llegue el primer hashchange real.
   window.addEventListener('hashchange', renderRoute);
+  // Arranca el listener de recuperación de contraseña ANTES de renderRoute()
+  // — si el usuario vuelve del enlace del email, Supabase procesa el
+  // "?code=..." de forma asíncrona y puede tardar un poco; cuando el evento
+  // llegue (ver 'auth:recovery' más abajo), naveguemos donde naveguemos ya
+  // habrá alguien escuchando.
+  initAuthListener();
   renderRoute();
 
   // No se espera (fire-and-forget): si no hay Supabase configurado o no hay

@@ -22,6 +22,7 @@ export async function renderSettingsAccount(mount) {
     // sync.js emite un cambio de estado, mientras esta pantalla sea la
     // que esté montada.
     on('sync:status', () => { if (currentMount) render(currentMount); });
+    on('auth:recovery', () => { if (currentMount) render(currentMount); });
   }
   await render(mount);
 }
@@ -41,6 +42,15 @@ async function render(mount) {
     return;
   }
 
+  // Se comprueba ANTES que la sesión normal: el enlace del email deja al
+  // usuario con una sesión temporal de recuperación, pero lo que tiene que
+  // ver es el formulario de "elige una contraseña nueva", no la pantalla de
+  // cuenta ya-iniciada-sesión.
+  if (auth.isPasswordRecoveryPending()) {
+    renderSetNewPassword(mount);
+    return;
+  }
+
   const session = await auth.getSession();
   if (!session) {
     renderSignedOut(mount);
@@ -54,6 +64,7 @@ function authErrorMessage(err) {
   if (/invalid login credentials/i.test(msg)) return 'Email o contraseña incorrectos';
   if (/already registered|already exists/i.test(msg)) return 'Ya existe una cuenta con ese email';
   if (/password/i.test(msg) && /(least|short|6)/i.test(msg)) return 'La contraseña es demasiado corta (mínimo 6 caracteres)';
+  if (err?.status === 429 || /rate limit|too many requests|security purposes/i.test(msg)) return 'Demasiados intentos — espera un poco antes de volver a intentarlo';
   if (msg === 'SYNC_NOT_CONFIGURED') return 'La sincronización no está configurada';
   return 'No se pudo completar la operación';
 }
@@ -77,6 +88,7 @@ function renderSignedOut(mount) {
         <input type="password" id="signin-password" autocomplete="current-password" />
       </div>
       <button class="btn btn-primary btn-block" id="signin-btn">Iniciar sesión</button>
+      <button class="btn btn-ghost btn-block" id="forgot-password-btn" style="margin-top:8px;">¿Has olvidado tu contraseña?</button>
     </div>
 
     <div class="section-label">Crear cuenta</div>
@@ -102,6 +114,75 @@ function renderSignedOut(mount) {
     btn: '#signup-btn', email: '#signup-email', password: '#signup-password',
     loadingLabel: 'Creando cuenta…',
     action: (email, password) => auth.signUp(email, password),
+  });
+
+  mount.querySelector('#forgot-password-btn').addEventListener('click', () => {
+    openForgotPasswordSheet(mount.querySelector('#signin-email').value.trim());
+  });
+}
+
+// Mismo mensaje se haya encontrado o no una cuenta con ese email (evita que
+// este formulario sirva para averiguar qué emails están registrados).
+function openForgotPasswordSheet(prefillEmail) {
+  openSheet(`
+    <h3 class="type-headline" style="margin-bottom:6px;">Restablecer contraseña</h3>
+    <p class="type-body text-dim" style="margin-bottom:var(--space-4);">
+      Te enviaremos un enlace por email para elegir una contraseña nueva.
+    </p>
+    <div class="field">
+      <label class="label">Email</label>
+      <input type="email" id="forgot-email" autocomplete="email" value="${escapeHtml(prefillEmail || '')}" autofocus />
+    </div>
+    <button class="btn btn-primary btn-block" id="forgot-send-btn">Enviar enlace</button>
+  `, {
+    onMount: (sheet, close) => {
+      const btn = sheet.querySelector('#forgot-send-btn');
+      btn.addEventListener('click', async () => {
+        const email = sheet.querySelector('#forgot-email').value.trim();
+        if (!email) { toast('Escribe tu email'); return; }
+        btn.disabled = true;
+        btn.textContent = 'Enviando…';
+        try {
+          await auth.resetPasswordForEmail(email);
+          toast('Si existe una cuenta con ese email, te hemos enviado un enlace');
+          close();
+        } catch (err) {
+          toast(authErrorMessage(err));
+          btn.disabled = false;
+          btn.textContent = 'Enviar enlace';
+        }
+      });
+    },
+  });
+}
+
+function renderSetNewPassword(mount) {
+  mount.innerHTML = `
+    <h1 class="type-title" style="margin-bottom:var(--space-5);">Elige una contraseña nueva</h1>
+    <div class="card">
+      <div class="field">
+        <label class="label">Contraseña nueva</label>
+        <input type="password" id="new-password" autocomplete="new-password" autofocus />
+      </div>
+      <button class="btn btn-primary btn-block" id="new-password-btn">Guardar contraseña</button>
+    </div>
+  `;
+  const btn = mount.querySelector('#new-password-btn');
+  const originalLabel = btn.textContent;
+  btn.addEventListener('click', async () => {
+    const value = mount.querySelector('#new-password').value;
+    if (!value) { toast('Escribe una contraseña'); return; }
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    try {
+      await auth.updatePassword(value);
+      toast('Contraseña actualizada');
+      await render(mount);
+    } catch (err) {
+      toast(authErrorMessage(err));
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
   });
 }
 
