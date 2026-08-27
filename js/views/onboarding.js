@@ -4,10 +4,13 @@
 // onboardingCompleted no existe todavía.
 import * as repo from '../db/repository.js';
 import * as settings from '../core/settings.js';
+import * as auth from '../core/auth.js';
+import * as sync from '../core/sync.js';
 import { toKg } from '../core/units.js';
 import { todayISO } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
 import { toast } from '../core/store.js';
+import { openSheet } from '../core/ui.js';
 
 export async function hasExistingUserData() {
   const [firstWeight, workouts] = await Promise.all([
@@ -35,9 +38,62 @@ export function runOnboarding() {
             <p class="brand-tagline">TRAIN <span class="brand-dot">&bull;</span> TRACK <span class="brand-dot">&bull;</span> PROGRESS</p>
           </div>
           <button class="btn btn-primary btn-block" id="ob-start">Empezar</button>
+          ${auth.isSupabaseConfigured() ? '<button class="btn btn-ghost btn-block" id="ob-signin" style="margin-top:8px;">¿Ya tienes cuenta? Iniciar sesión</button>' : ''}
         </div>
       `;
       app.querySelector('#ob-start').addEventListener('click', renderName);
+      app.querySelector('#ob-signin')?.addEventListener('click', openSignInSheet);
+    }
+
+    // Dispositivo nuevo con una cuenta ya existente: en vez de crear un
+    // perfil local vacío (nombre/peso) para luego tener que ir a Ajustes a
+    // iniciar sesión a mano, se ofrece aquí mismo — al iniciar sesión se
+    // sincronizan directamente los datos ya guardados en la cuenta. Como el
+    // onboarding solo se ejecuta cuando el dispositivo no tiene datos locales
+    // (ver hasExistingUserData() en app.js), no hace falta preguntar por
+    // fusión de datos: no hay nada local que subir.
+    function openSignInSheet() {
+      openSheet(`
+        <h3 class="type-headline" style="margin-bottom:6px;">Iniciar sesión</h3>
+        <p class="type-body text-dim" style="margin-bottom:var(--space-4);">
+          Tus datos se sincronizarán automáticamente en este dispositivo.
+        </p>
+        <div class="field">
+          <label class="label">Email</label>
+          <input type="email" id="ob-signin-email" autocomplete="email" autofocus />
+        </div>
+        <div class="field">
+          <label class="label">Contraseña</label>
+          <input type="password" id="ob-signin-password" autocomplete="current-password" />
+        </div>
+        <button class="btn btn-primary btn-block" id="ob-signin-btn">Iniciar sesión</button>
+      `, {
+        onMount: (sheet, close) => {
+          const btn = sheet.querySelector('#ob-signin-btn');
+          const originalLabel = btn.textContent;
+          btn.addEventListener('click', async () => {
+            const email = sheet.querySelector('#ob-signin-email').value.trim();
+            const password = sheet.querySelector('#ob-signin-password').value;
+            if (!email || !password) { toast('Escribe email y contraseña'); return; }
+            btn.disabled = true;
+            btn.textContent = 'Iniciando sesión…';
+            try {
+              await auth.signIn(email, password);
+              close();
+              toast('Sincronizando tus datos…');
+              await settings.setLocalDataMigrated(true);
+              await settings.setOnboardingCompleted(true);
+              await sync.syncNow({ manual: true });
+              toast('Datos sincronizados');
+              resolve();
+            } catch (err) {
+              toast(auth.authErrorMessage(err));
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+            }
+          });
+        },
+      });
     }
 
     function renderName() {

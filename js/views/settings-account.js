@@ -59,15 +59,7 @@ async function render(mount) {
   }
 }
 
-function authErrorMessage(err) {
-  const msg = String(err?.message || err || '');
-  if (/invalid login credentials/i.test(msg)) return 'Email o contraseña incorrectos';
-  if (/already registered|already exists/i.test(msg)) return 'Ya existe una cuenta con ese email';
-  if (/password/i.test(msg) && /(least|short|6)/i.test(msg)) return 'La contraseña es demasiado corta (mínimo 6 caracteres)';
-  if (err?.status === 429 || /rate limit|too many requests|security purposes/i.test(msg)) return 'Demasiados intentos — espera un poco antes de volver a intentarlo';
-  if (msg === 'SYNC_NOT_CONFIGURED') return 'La sincronización no está configurada';
-  return 'No se pudo completar la operación';
-}
+const authErrorMessage = auth.authErrorMessage;
 
 function renderSignedOut(mount) {
   mount.innerHTML = `

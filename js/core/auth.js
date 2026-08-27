@@ -7,6 +7,19 @@ import { emit } from './store.js';
 
 export { isSupabaseConfigured };
 
+// Mensaje de error legible compartido por cualquier pantalla que use
+// email+contraseña (Ajustes > Cuenta y el paso de "iniciar sesión" del
+// onboarding en un dispositivo nuevo).
+export function authErrorMessage(err) {
+  const msg = String(err?.message || err || '');
+  if (/invalid login credentials/i.test(msg)) return 'Email o contraseña incorrectos';
+  if (/already registered|already exists/i.test(msg)) return 'Ya existe una cuenta con ese email';
+  if (/password/i.test(msg) && /(least|short|6)/i.test(msg)) return 'La contraseña es demasiado corta (mínimo 6 caracteres)';
+  if (err?.status === 429 || /rate limit|too many requests|security purposes/i.test(msg)) return 'Demasiados intentos — espera un poco antes de volver a intentarlo';
+  if (msg === 'SYNC_NOT_CONFIGURED') return 'La sincronización no está configurada';
+  return 'No se pudo completar la operación';
+}
+
 export async function signUp(email, password) {
   const supabase = getSupabaseClient();
   if (!supabase) throw new Error('SYNC_NOT_CONFIGURED');
