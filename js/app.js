@@ -203,7 +203,13 @@ async function renderRoute() {
 
 window.addEventListener('DOMContentLoaded', async () => {
   await settings.loadSettingsCache();
-  if (!settings.isOnboardingCompleted()) {
+  // Un "?code=..." en la URL solo puede venir de un redirect de Supabase Auth
+  // (p.ej. el enlace de "olvidé mi contraseña"). Si aparece, nos saltamos el
+  // onboarding aunque el dispositivo no tenga datos locales todavía — si no,
+  // alguien que abre ese enlace en un navegador/dispositivo nuevo se queda
+  // atrapado en el asistente de bienvenida antes de poder cambiar su contraseña.
+  const hasAuthCode = new URLSearchParams(window.location.search).has('code');
+  if (!hasAuthCode && !settings.isOnboardingCompleted()) {
     if (await hasExistingUserData()) {
       // Instalación previa a la existencia del onboarding: no mostrarlo nunca,
       // solo marcar el flag en silencio.
