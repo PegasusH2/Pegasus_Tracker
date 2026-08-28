@@ -179,6 +179,15 @@ const SCHEMA = {
   required: ['routines'],
 };
 
+// Mismo proyecto/clave pública que usa la PWA (js/core/supabase-client.js) —
+// la anon key es pública por diseño, la protección real es RLS. La
+// service_role key (env.SUPABASE_SERVICE_ROLE_KEY) es la única secreta aquí:
+// vive SOLO como secreto de este Worker (wrangler secret put
+// SUPABASE_SERVICE_ROLE_KEY), nunca en el repo ni en la PWA — ver
+// worker/README.md.
+const SUPABASE_URL = 'https://vftvabshqcxnzgxthisv.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_nx_3bj5brR6nWEvw2J9zpA_P2NNDB0s';
+
 const MAX_BASE64_LENGTH = 8_000_000; // ~6MB de imagen real tras base64
 
 // ---------- Rate limiting (KV, por IP y ventana de tiempo) ----------
@@ -304,7 +313,7 @@ function corsHeaders(request) {
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-App-Token, X-Admin-Session',
+    'Access-Control-Allow-Headers': 'Content-Type, X-App-Token, X-Admin-Session, Authorization',
     'Vary': 'Origin',
   };
 }
@@ -457,6 +466,76 @@ async function handleAnalyze(request, env) {
   });
 }
 
+const DELETE_ACCOUNT_RATE_LIMIT_MAX = 5; // intentos de borrado de cuenta por IP y hora
+
+// Borra la cuenta de Supabase Auth del usuario autenticado — y en cascada
+// TODOS sus datos, porque cada tabla tiene "user_id references auth.users(id)
+// on delete cascade" (ver supabase/schema.sql). Necesita la service_role key,
+// que nunca puede vivir en la PWA (un cliente con esa clave podría borrar la
+// cuenta de cualquiera), así que este paso solo puede hacerse aquí, en el
+// backend. El id a borrar se obtiene verificando el propio token de sesión
+// contra Supabase (GoTrue valida firma/caducidad), nunca de un id que mandara
+// el cliente — así nadie puede pedir borrar la cuenta de otra persona.
+async function handleDeleteAccount(request, env) {
+  if (request.method !== 'POST') return jsonError(request, 'Método no permitido', 405);
+
+  if (env.APP_SHARED_TOKEN && request.headers.get('X-App-Token') !== env.APP_SHARED_TOKEN) {
+    return jsonError(request, 'No autorizado', 401);
+  }
+
+  const ip = getClientIp(request);
+  const okRate = await checkRateLimit(env, `delete-account:${ip}`, DELETE_ACCOUNT_RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_SECONDS);
+  if (!okRate) {
+    logEvent({ role: 'user', action: 'delete-account', success: false, reason: 'rate_limited' });
+    return jsonError(request, 'Demasiados intentos, inténtalo más tarde', 429);
+  }
+
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) return jsonError(request, 'Eliminar cuenta no está configurado', 503);
+
+  const authHeader = request.headers.get('Authorization') || '';
+  const accessToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!accessToken) return jsonError(request, 'Sesión no válida', 401);
+
+  let userId;
+  try {
+    const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
+    });
+    if (!userRes.ok) return jsonError(request, 'Sesión no válida', 401);
+    const user = await userRes.json();
+    userId = user?.id;
+  } catch {
+    return jsonError(request, 'No se pudo verificar la sesión', 502);
+  }
+  if (!userId) return jsonError(request, 'Sesión no válida', 401);
+
+  let delRes;
+  try {
+    delRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      },
+    });
+  } catch {
+    logEvent({ role: 'user', action: 'delete-account', success: false, reason: 'network_error' });
+    return jsonError(request, 'No se pudo contactar con Supabase', 502);
+  }
+  if (!delRes.ok) {
+    const errText = await delRes.text().catch(() => '');
+    console.error('Supabase admin delete error', delRes.status, errText);
+    logEvent({ role: 'user', action: 'delete-account', success: false, reason: 'supabase_error', status: delRes.status });
+    return jsonError(request, 'No se pudo eliminar la cuenta', 502);
+  }
+
+  logEvent({ role: 'user', action: 'delete-account', success: true });
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
+  });
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
@@ -466,6 +545,9 @@ export default {
     const { pathname } = new URL(request.url);
     if (pathname === '/admin/login') {
       return handleAdminLogin(request, env);
+    }
+    if (pathname === '/account/delete') {
+      return handleDeleteAccount(request, env);
     }
     return handleAnalyze(request, env);
   },

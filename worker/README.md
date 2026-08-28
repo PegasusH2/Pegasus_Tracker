@@ -109,6 +109,29 @@ registrando (rol, tipo de análisis, éxito/error, consumo aproximado de
 tokens de Gemini si la API lo informa) en los logs del Worker
 (`wrangler tail`), sin incluir nunca contraseñas ni tokens de sesión.
 
+## Eliminar cuenta (Ajustes → Cuenta y sincronización)
+
+Borrar una cuenta de Supabase Auth (y con ella, en cascada, todos sus datos)
+solo se puede hacer con la "service role key" — una clave que NUNCA debe
+llegar a la PWA (cualquiera que la tuviera podría borrar la cuenta de otra
+persona). Por eso este paso vive aquí, en el Worker, no en el cliente.
+
+Copia la clave desde el panel de Supabase: **Project Settings → API →
+service_role secret** (proyecto "Pegasus Tracker Project"). Configúrala como
+secreto del Worker:
+
+```bash
+wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+```
+
+Vuelve a desplegar (`wrangler deploy`). Sin este secreto configurado, el botón
+"Eliminar cuenta" de la app sigue apareciendo pero falla con un mensaje claro
+("Eliminar cuenta no está configurado") — no rompe nada más.
+
+**Esta clave es tan sensible como la contraseña maestra de la base de
+datos.** No la pegues nunca en el repo, en la PWA, ni la compartas — solo
+debe existir como secreto de este Worker.
+
 ## Coste
 
 Con el nivel gratuito de Gemini (Flash, ~1500 peticiones/día) y el de

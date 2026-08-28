@@ -9,6 +9,7 @@ import * as settings from '../core/settings.js';
 import { openSheet, openConfirmSheet } from '../core/ui.js';
 import { escapeHtml } from '../core/escape.js';
 import { toast, on } from '../core/store.js';
+import { navigate } from '../app.js';
 
 let currentMount = null;
 let subscribed = false;
@@ -269,6 +270,21 @@ async function renderSignedIn(mount, session) {
         <button class="btn btn-secondary btn-block" id="upload-local-btn">Subir datos locales</button>
       </div>
     ` : ''}
+
+    <div class="section-label">Zona de riesgo</div>
+    <div class="card" style="margin-top:var(--space-2);">
+      <div class="type-headline text-danger" style="margin-bottom:6px;">Eliminar cuenta</div>
+      <p class="type-body text-dim" style="margin-bottom:var(--space-4);">
+        Borra tu cuenta de Pegasus de forma permanente: se elimina tu usuario y todos tus datos en la nube
+        (entrenamientos, rutinas, peso, medidas, plicómetro...), y también los datos de este dispositivo.
+        Esta acción no se puede deshacer.
+      </p>
+      <label class="row" style="margin-bottom:var(--space-4); cursor:pointer;">
+        <span class="type-body">Entiendo que esto es irreversible</span>
+        <input type="checkbox" id="confirm-delete-account-checkbox" style="width:24px; height:24px; accent-color:var(--danger);" />
+      </label>
+      <button class="btn btn-danger btn-block" id="delete-account-btn" disabled>Eliminar cuenta</button>
+    </div>
   `;
 
   mount.querySelector('#signout-btn').addEventListener('click', () => openSignOutSheet(mount));
@@ -281,6 +297,49 @@ async function renderSignedIn(mount, session) {
     await sync.migrateLocalDataToAccount();
     toast('Datos subidos');
     await render(mount);
+  });
+
+  const deleteAccountCheckbox = mount.querySelector('#confirm-delete-account-checkbox');
+  const deleteAccountBtn = mount.querySelector('#delete-account-btn');
+  deleteAccountCheckbox.addEventListener('change', () => {
+    deleteAccountBtn.disabled = !deleteAccountCheckbox.checked;
+  });
+  deleteAccountBtn.addEventListener('click', () => openDeleteAccountSheet(mount));
+}
+
+// Doble confirmación (checkbox + este cuadro), mismo nivel de fricción que
+// "Borrar todos los datos" en Ajustes > Datos — pero esto además borra el
+// usuario en Supabase (ver auth.deleteAccount/worker/index.js), así que no
+// hay ningún "deshacer" posible ni siquiera reinstalando la app.
+function openDeleteAccountSheet(mount) {
+  openSheet(`
+    <h3 class="type-headline text-danger" style="margin-bottom:6px;">Eliminar cuenta</h3>
+    <p class="type-body text-dim" style="margin-bottom:var(--space-4);">
+      Se borrará tu cuenta y todos tus datos en la nube, y también los de este dispositivo.
+      Esta es la última confirmación — no hay vuelta atrás.
+    </p>
+    <button class="btn btn-danger btn-block" id="delete-account-confirm">Eliminar mi cuenta y todos mis datos</button>
+  `, {
+    onMount: (sheet, close) => {
+      const btn = sheet.querySelector('#delete-account-confirm');
+      const originalLabel = btn.textContent;
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Eliminando…';
+        try {
+          await auth.deleteAccount();
+          await repo.clearAllData();
+          repo.setSyncActive(false);
+          close();
+          toast('Cuenta eliminada');
+          navigate('/home');
+        } catch (err) {
+          toast(authErrorMessage(err));
+          btn.disabled = false;
+          btn.textContent = originalLabel;
+        }
+      });
+    },
   });
 }
 

@@ -4,6 +4,7 @@
 // la app depende de que exista sesión.
 import { getSupabaseClient, isSupabaseConfigured } from './supabase-client.js';
 import { emit } from './store.js';
+import { WORKER_URL, APP_SHARED_TOKEN } from './ai-import.js';
 
 export { isSupabaseConfigured };
 
@@ -17,6 +18,11 @@ export function authErrorMessage(err) {
   if (/password/i.test(msg) && /(least|short|6)/i.test(msg)) return 'La contraseña es demasiado corta (mínimo 6 caracteres)';
   if (err?.status === 429 || /rate limit|too many requests|security purposes/i.test(msg)) return 'Demasiados intentos — espera un poco antes de volver a intentarlo';
   if (msg === 'SYNC_NOT_CONFIGURED') return 'La sincronización no está configurada';
+  if (msg === 'WORKER_NOT_CONFIGURED') return 'Eliminar cuenta no está configurado todavía';
+  if (msg === 'RATE_LIMITED') return 'Demasiados intentos — espera un poco antes de volver a intentarlo';
+  if (msg === 'NETWORK_ERROR') return 'No se pudo conectar con el servidor';
+  if (msg === 'DELETE_FAILED') return 'No se pudo eliminar la cuenta. Inténtalo de nuevo';
+  if (msg === 'NO_SESSION') return 'No has iniciado sesión';
   return 'No se pudo completar la operación';
 }
 
@@ -44,6 +50,42 @@ export async function signOut() {
   if (!supabase) return;
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
+}
+
+// Borra la cuenta de Supabase Auth (y en cascada TODOS sus datos remotos, ver
+// worker/index.js) a través del Worker propio — el cliente nunca tiene la
+// service_role key necesaria para borrar un usuario de Supabase, así que este
+// paso no puede hacerse directamente desde aquí. No toca los datos LOCALES de
+// este dispositivo: la pantalla que llama a esto decide si también los borra
+// (mismo patrón que cerrar sesión, ver js/views/settings-account.js).
+export async function deleteAccount() {
+  const session = await getSession();
+  if (!session) throw new Error('NO_SESSION');
+  if (!WORKER_URL) throw new Error('WORKER_NOT_CONFIGURED');
+
+  let res;
+  try {
+    res = await fetch(`${WORKER_URL}/account/delete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-App-Token': APP_SHARED_TOKEN,
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+  } catch {
+    throw new Error('NETWORK_ERROR');
+  }
+  if (res.status === 429) throw new Error('RATE_LIMITED');
+  if (res.status === 503) throw new Error('WORKER_NOT_CONFIGURED');
+  if (!res.ok) throw new Error('DELETE_FAILED');
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    // La cuenta ya no existe en el servidor en este punto — signOut aquí solo
+    // limpia los tokens guardados localmente, puede fallar sin que importe.
+    try { await supabase.auth.signOut(); } catch { /* ya no hay nada que cerrar en el servidor */ }
+  }
 }
 
 export async function getSession() {
