@@ -227,6 +227,102 @@ main.view.view--focus {
 }
 .brand-dot { color: #FF3B30; margin: 0 4px; }
 
+/* Splash de arranque (ver index.html) — por encima de absolutamente todo,
+   incluidos los sheets (z-index:50), mientras la app termina de arrancar.
+   A diferencia de .brand-splash (bienvenida del onboarding, siempre en
+   negro a propósito), esta SÍ se adapta al tema elegido — usa variables en
+   vez de los colores fijos de .brand-splash, así que en cuanto
+   js/core/theme.js aplica el tema guardado (justo al arrancar, mucho antes
+   de que termine de mostrarse) adopta sus colores. El logo también: en vez
+   del PNG original (fondo negro incrustado en la imagen), aquí se recompone
+   sin caja — la silueta del caballo como máscara CSS coloreada con
+   var(--text) + la banda roja como imagen suelta siempre en rojo de marca
+   (ver el <div class="brand-logo"> de index.html). */
+#app-splash {
+  z-index: 100;
+  background: var(--bg);
+  color: var(--text);
+  transition: opacity 180ms var(--ease); /* rápido y suave, más corto que el resto de transiciones de la app */
+}
+#app-splash.app-splash--hide {
+  opacity: 0;
+  pointer-events: none;
+}
+#app-splash .brand-wordmark { color: var(--text); }
+#app-splash .brand-tagline { color: var(--text-secondary); }
+#app-splash .brand-dot { color: var(--accent); }
+
+#app-splash .brand-logo {
+  position: relative;
+  animation: appSplashLogoPulse 1.6s ease-in-out infinite;
+}
+#app-splash .brand-logo-mono {
+  position: absolute;
+  inset: 0;
+  background: var(--text);
+  -webkit-mask: url('../icons/icon-mono-horse-mask.png') center / contain no-repeat;
+  mask: url('../icons/icon-mono-horse-mask.png') center / contain no-repeat;
+}
+#app-splash .brand-logo-stripe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Leve "respiración" del logo mientras se muestra la carga. */
+@keyframes appSplashLogoPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+/* Firma "4 the Queens" — solo con ese tema (ver el <svg
+   class="brand-queens-signature"> de index.html). Sustituye al lema normal
+   en el MISMO sitio (misma posición en los 3 temas, justo bajo "PEGASUS") en
+   vez de añadirse como una línea extra. Cada letra es su propio <path>, YA
+   con el relleno sólido definitivo (nunca hueco) — el trazado real, extraído
+   una vez de Dancing Script Semibold con fontTools (la fuente en sí ya no
+   hace falta en tiempo de ejecución, solo se usó para generar estos
+   trazados).
+   Se revela con clip-path por letra (barato de animar: nada de
+   stroke-dasharray sobre curvas con cientos de puntos, que iba a tirones
+   sobre todo en móvil) — cada letra tiene su propio animation-delay
+   (inline, en index.html) para que aparezcan en orden, de izquierda a
+   derecha, como si se escribieran a mano. Ver MIN_QUEENS_SPLASH_MS en
+   js/app.js — mantiene el splash visible el tiempo justo para que la
+   última letra siempre termine de aparecer, nunca se corta. */
+#app-splash .brand-queens-signature { display: none; }
+:root[data-theme="queens"] #app-splash .brand-tagline { display: none; }
+:root[data-theme="queens"] #app-splash .brand-queens-signature {
+  display: block;
+  width: 210px;
+  height: auto;
+  margin: var(--space-3) auto 0;
+  overflow: visible;
+}
+#app-splash .brand-queens-letter {
+  fill: var(--accent);
+  clip-path: inset(0 100% 0 0);
+  animation: queensLetterReveal 0.28s ease-out forwards;
+}
+@keyframes queensLetterReveal {
+  to { clip-path: inset(0 0 0 0); }
+}
+
+/* Contenido de la app — entra con un fundido + leve deslizamiento hacia
+   arriba justo cuando se retira el splash (ver revealApp() en js/app.js),
+   para que los datos ya cargados "aparezcan" en vez de aparecer de golpe. */
+#app {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 420ms var(--ease), transform 420ms var(--ease);
+}
+#app.app-ready {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .toast {
   position: fixed;
   bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--space-4));

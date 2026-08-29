@@ -21,6 +21,46 @@ import { on, toast } from './core/store.js';
 import * as settings from './core/settings.js';
 import { initSync } from './core/sync.js';
 import { initAuthListener } from './core/auth.js';
+import { initTheme, applyTheme } from './core/theme.js';
+
+// Splash de arranque (ver index.html/#app-splash) — se queda visible un
+// mínimo de 2s desde que este módulo empieza a ejecutarse, aunque el resto
+// del arranque (settings, tema, comprobación de onboarding) termine antes.
+const APP_BOOT_STARTED_AT = Date.now();
+const MIN_SPLASH_MS = 2000;
+// La firma "4 the Queens" (10 letras, ver index.html + css/layout.css) tiene
+// que terminar de "escribirse" ANTES de que el splash empiece a desvanecerse
+// — si no, el texto se corta a medias. Última letra: animation-delay 1.21s +
+// 0.28s de animación = 1.49s. Estos dos números viven aquí, sueltos, porque
+// son producto de las constantes usadas al generar el SVG (no algo que se
+// pueda leer del DOM antes de que la animación empiece) — si alguna vez se
+// retocan esos tiempos, hay que actualizar esto también.
+const QUEENS_SIGNATURE_END_MS = 1490;
+const QUEENS_SIGNATURE_MARGIN_MS = 400;
+
+function hideSplash() {
+  const splash = document.getElementById('app-splash');
+  if (!splash) return;
+  splash.classList.add('app-splash--hide');
+  splash.addEventListener('transitionend', () => splash.remove(), { once: true });
+}
+
+function waitForMinSplashDuration() {
+  const minMs = settings.getTheme() === 'queens'
+    ? Math.max(MIN_SPLASH_MS, QUEENS_SIGNATURE_END_MS + QUEENS_SIGNATURE_MARGIN_MS)
+    : MIN_SPLASH_MS;
+  const elapsed = Date.now() - APP_BOOT_STARTED_AT;
+  if (elapsed >= minMs) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, minMs - elapsed));
+}
+
+// Retira el splash Y revela #app (fundido + leve deslizamiento, ver
+// css/layout.css) en el mismo instante — para que el contenido "aparezca"
+// justo cuando el splash se desvanece, no antes ni después.
+function revealApp() {
+  hideSplash();
+  document.getElementById('app')?.classList.add('app-ready');
+}
 
 const ALL_TABS = [
   { key: 'home', label: 'Inicio', icon: NAV_ICONS.home, path: '/home' },
@@ -154,6 +194,7 @@ on('auth:recovery', () => navigate('/ajustes/cuenta'));
 
 on('prefs:changed', ({ key }) => {
   if (key === 'progressSections') renderBottomNav(currentTab);
+  if (key === 'theme') applyTheme(settings.getTheme());
 });
 
 function renderSubtabs(container, subtabs, activeSubtab) {
@@ -201,23 +242,11 @@ async function renderRoute() {
   }
 }
 
-window.addEventListener('DOMContentLoaded', async () => {
-  await settings.loadSettingsCache();
-  // Un "?code=..." en la URL solo puede venir de un redirect de Supabase Auth
-  // (p.ej. el enlace de "olvidé mi contraseña"). Si aparece, nos saltamos el
-  // onboarding aunque el dispositivo no tenga datos locales todavía — si no,
-  // alguien que abre ese enlace en un navegador/dispositivo nuevo se queda
-  // atrapado en el asistente de bienvenida antes de poder cambiar su contraseña.
-  const hasAuthCode = new URLSearchParams(window.location.search).has('code');
-  if (!hasAuthCode && !settings.isOnboardingCompleted()) {
-    if (await hasExistingUserData()) {
-      // Instalación previa a la existencia del onboarding: no mostrarlo nunca,
-      // solo marcar el flag en silencio.
-      await settings.setOnboardingCompleted(true);
-    } else {
-      await runOnboarding();
-    }
-  }
+// Monta la barra/vista normal y registra los listeners de navegación.
+// Devuelve la promesa de renderRoute() (la propia vista terminada de pintar)
+// para poder esperarla cuando interesa (ver más abajo: revelar #app justo
+// con el contenido ya listo, no antes).
+function bootShell() {
   renderShell();
   // El listener se registra DESPUÉS de renderShell() para que #view/#bottom-nav
   // ya existan cuando llegue el primer hashchange real.
@@ -228,7 +257,44 @@ window.addEventListener('DOMContentLoaded', async () => {
   // llegue (ver 'auth:recovery' más abajo), naveguemos donde naveguemos ya
   // habrá alguien escuchando.
   initAuthListener();
-  renderRoute();
+  return renderRoute();
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  await settings.loadSettingsCache();
+  initTheme();
+
+  // Un "?code=..." en la URL solo puede venir de un redirect de Supabase Auth
+  // (p.ej. el enlace de "olvidé mi contraseña"). Si aparece, nos saltamos el
+  // onboarding aunque el dispositivo no tenga datos locales todavía — si no,
+  // alguien que abre ese enlace en un navegador/dispositivo nuevo se queda
+  // atrapado en el asistente de bienvenida antes de poder cambiar su contraseña.
+  const hasAuthCode = new URLSearchParams(window.location.search).has('code');
+  let needsOnboarding = false;
+  if (!hasAuthCode && !settings.isOnboardingCompleted()) {
+    if (await hasExistingUserData()) {
+      // Instalación previa a la existencia del onboarding: no mostrarlo nunca,
+      // solo marcar el flag en silencio.
+      await settings.setOnboardingCompleted(true);
+    } else {
+      needsOnboarding = true;
+    }
+  }
+
+  // Caso normal (ya hay cuenta/datos): se pinta la vista ANTES de revelar
+  // #app, para que el fundido de entrada muestre datos ya listos, nunca una
+  // pantalla vacía a medio cargar. El onboarding es al revés (no hay nada
+  // que precargar) — se revela primero y su propia pantalla de bienvenida
+  // aparece después, como siempre.
+  if (!needsOnboarding) await bootShell();
+
+  await waitForMinSplashDuration();
+  revealApp();
+
+  if (needsOnboarding) {
+    await runOnboarding();
+    bootShell();
+  }
 
   // No se espera (fire-and-forget): si no hay Supabase configurado o no hay
   // sesión, no hace nada; si la hay, sincroniza en segundo plano sin retrasar

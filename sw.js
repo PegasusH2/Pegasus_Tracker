@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fitness-tracker-v52';
+const CACHE_VERSION = 'fitness-tracker-v62';
 
 const PRECACHE_URLS = [
   './',
@@ -19,6 +19,7 @@ const PRECACHE_URLS = [
   './js/core/stats.js',
   './js/core/skinfold-points.js',
   './js/core/settings.js',
+  './js/core/theme.js',
   './js/core/units.js',
   './js/core/ai-import.js',
   './js/core/exercise-match.js',
@@ -54,6 +55,8 @@ const PRECACHE_URLS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './icons/icon-mono-horse-mask.png',
+  './icons/icon-mono-stripe.png',
   './icons/muscles/icon-pierna.png',
   './icons/muscles/icon-culo.png',
   './icons/muscles/icon-espalda.png',
