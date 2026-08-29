@@ -343,3 +343,39 @@ describe('Migración de datos locales al crear/iniciar sesión', () => {
     assert.ok(fakeSupabase.tables.workout_exercises.has('we-orphan')); // y ahora SÍ pudo subir
   });
 });
+
+describe('syncSoonIfActive — disparo inmediato tras registrar peso/medidas/plicómetro/entreno', () => {
+  // Las vistas la llaman sin esperarla (fire-and-forget, ver el comentario en
+  // sync.js) — aquí SÍ se espera la promesa que devuelve, solo para poder
+  // comprobar el resultado de forma determinista, sin depender de un
+  // setTimeout arbitrario (esta cadena toca IndexedDB real vía Dexie, así
+  // que un setTimeout(0) no basta para que termine).
+  test('con sesión activa y online, sube lo pendiente sin esperar al debounce', async () => {
+    repo.setSyncActive(true);
+    const ex = await repo.createExercise({ name: 'Sentadilla' });
+
+    await sync.syncSoonIfActive();
+
+    assert.ok(fakeSupabase.tables.exercises.has(ex.id));
+    assert.equal((await db.syncQueue.toArray()).length, 0);
+  });
+
+  test('en modo local (sin sesión), no intenta sincronizar nada', async () => {
+    repo.setSyncActive(false);
+    await repo.createExercise({ name: 'Local' });
+
+    await sync.syncSoonIfActive();
+
+    assert.equal(fakeSupabase.tables.exercises?.size ?? 0, 0);
+  });
+
+  test('sin conexión, no lanza y deja la fila pendiente para el próximo intento', async () => {
+    repo.setSyncActive(true);
+    Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, writable: true, configurable: true });
+    await repo.createExercise({ name: 'Offline' });
+
+    await assert.doesNotReject(async () => sync.syncSoonIfActive());
+
+    assert.equal((await db.syncQueue.toArray()).length, 1);
+  });
+});

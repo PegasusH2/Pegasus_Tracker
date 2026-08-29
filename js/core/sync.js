@@ -264,6 +264,20 @@ export async function syncNow({ manual = false } = {}) {
   }
 }
 
+// Dispara una sincronización YA, sin esperar al debounce de 3s de
+// 'sync:queued' (ver initSync más abajo) — para acciones puntuales donde no
+// queremos arriesgarnos a que el usuario cierre la app/pestaña antes de que
+// salte ese debounce genérico (registrar peso, una medida, una lectura de
+// plicómetro, terminar un entrenamiento...). No-op en modo local o sin
+// conexión — mismo criterio que ya usa ese debounce. Las vistas la llaman
+// SIN esperarla a propósito (fire-and-forget): la escritura local ya se
+// completó antes de llamar a esto (offline-first, ver cabecera del
+// archivo), nunca se bloquea la UI por la red. Devuelve la promesa de
+// syncNow() solo para que los tests puedan esperarla de forma determinista.
+export function syncSoonIfActive() {
+  if (repo.isSyncActive() && navigator.onLine) return syncNow();
+}
+
 // Sube TODOS los datos locales existentes como si acabaran de crearse — se
 // ofrece una única vez al iniciar sesión por primera vez en un dispositivo
 // con datos (ver js/views/settings-account.js). Nunca borra IndexedDB; es

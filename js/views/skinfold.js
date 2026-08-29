@@ -5,6 +5,7 @@ import { escapeHtml } from '../core/escape.js';
 import { openSheet, openConfirmSheet, getChartThemeColors } from '../core/ui.js';
 import { toast } from '../core/store.js';
 import { SKINFOLD_POINTS_JP7 } from '../core/skinfold-points.js';
+import * as sync from '../core/sync.js';
 
 let sumChartInstance = null;
 
@@ -213,6 +214,7 @@ async function openPointSheet(mount, site, meta) {
         btn.disabled = true;
         try {
           await repo.addSkinfoldEntry({ siteId: site.id, date, valueMm: Number(value) });
+          sync.syncSoonIfActive();
           close();
           await renderSkinfold(mount);
         } catch (err) {
@@ -298,6 +300,7 @@ function openBulkEntrySheet(mount, sites) {
           for (const input of inputs) {
             await repo.addSkinfoldEntry({ siteId: input.dataset.site, date, valueMm: Number(input.value) });
           }
+          sync.syncSoonIfActive();
           close();
           await renderSkinfold(mount);
         } catch (err) {

@@ -5,6 +5,7 @@ import { escapeHtml } from '../core/escape.js';
 import { openSheet, openConfirmSheet, getChartThemeColors } from '../core/ui.js';
 import { toast } from '../core/store.js';
 import { navigate } from '../app.js';
+import * as sync from '../core/sync.js';
 
 // Medidas sugeridas por defecto — el usuario puede desactivarlas o crear las suyas.
 const DEFAULT_TYPES = [
@@ -247,6 +248,7 @@ function openRegisterSheet(mount, types) {
               await repo.addMeasurement({ typeId, date, valueLeft: sides.left ?? null, valueRight: sides.right ?? null });
             }
           }
+          sync.syncSoonIfActive();
           close();
           toast('Medidas guardadas');
           await renderMeasurements(mount);

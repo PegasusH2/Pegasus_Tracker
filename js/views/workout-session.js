@@ -8,6 +8,7 @@ import { toKg, toUnit, roundForDisplay, inputStep } from '../core/units.js';
 import { getWeightUnitsEnabled, getWeightLastInputUnit } from '../core/settings.js';
 import { toast } from '../core/store.js';
 import { navigate } from '../app.js';
+import * as sync from '../core/sync.js';
 
 export async function renderWorkoutSession(mount, { workoutId }) {
   const detail = await repo.getWorkoutDetail(workoutId);
@@ -70,7 +71,9 @@ export async function renderWorkoutSession(mount, { workoutId }) {
     await repo.updateWorkout(workout.id, { notes: e.target.value });
   });
   mount.querySelector('#w-finish').addEventListener('click', async () => {
-    await repo.updateWorkout(workout.id, { completed: !workout.completed });
+    const finishing = !workout.completed; // true al pasar de pendiente a finalizado, no al reabrir
+    await repo.updateWorkout(workout.id, { completed: finishing });
+    if (finishing) sync.syncSoonIfActive();
     await renderWorkoutSession(mount, { workoutId });
     toast(workout.completed ? 'Entrenamiento reabierto' : 'Entrenamiento finalizado');
   });

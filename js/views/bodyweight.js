@@ -5,6 +5,7 @@ import { openSheet, openConfirmSheet, getChartThemeColors } from '../core/ui.js'
 import { toKg, toUnit, roundForDisplay, formatWeightUnit, inputStep } from '../core/units.js';
 import { getWeightProgressUnit, getWeightUnitsEnabled, getWeightLastInputUnit, setWeightLastInputUnit } from '../core/settings.js';
 import { toast } from '../core/store.js';
+import * as sync from '../core/sync.js';
 
 const PERIODS = [
   { key: '7d', label: '7 días' },
@@ -219,6 +220,7 @@ function openWeightForm(mount, existing) {
             await repo.addBodyWeight({ date, weightKg, notes });
           }
           await setWeightLastInputUnit(formUnit);
+          sync.syncSoonIfActive();
           close();
           await renderBodyWeight(mount);
         } catch (err) {
