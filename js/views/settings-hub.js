@@ -7,6 +7,7 @@ import { navigate } from '../app.js';
 import { adminLogin } from '../core/ai-import.js';
 import { isSupabaseConfigured } from '../core/auth.js';
 import { getSyncStatus } from '../core/sync.js';
+import { THEMES } from '../core/theme.js';
 
 let currentMount = null;
 on('prefs:changed', ({ key }) => {
@@ -56,6 +57,10 @@ function render(mount) {
         <span class="type-body" style="font-weight:600;">Personalizar</span>
         <span class="text-faint">›</span>
       </div>
+      <div class="grouped-row" id="row-tema" style="cursor:pointer;">
+        <span class="type-body" style="font-weight:600;">Tema</span>
+        <span class="text-faint">${THEMES.find((t) => t.key === settings.getTheme())?.label ?? ''} ›</span>
+      </div>
       <div class="grouped-row" id="row-datos" style="cursor:pointer;">
         <span class="type-body" style="font-weight:600;">Datos</span>
         <span class="text-faint">›</span>
@@ -83,6 +88,7 @@ function render(mount) {
   mount.querySelector('#row-perfil').addEventListener('click', () => openPerfilSheet(mount));
   mount.querySelector('#row-pesos').addEventListener('click', () => openPesosSheet());
   mount.querySelector('#row-personalizar').addEventListener('click', () => openPersonalizarSheet());
+  mount.querySelector('#row-tema').addEventListener('click', () => openTemaSheet(mount));
   mount.querySelector('#row-datos').addEventListener('click', () => navigate('/ajustes/datos'));
   mount.querySelector('#row-cuenta')?.addEventListener('click', () => navigate('/ajustes/cuenta'));
   mount.querySelector('#row-dev')?.addEventListener('click', () => openDevModeSheet(mount));
@@ -334,5 +340,42 @@ function openPersonalizarSheet() {
         });
       });
     },
+  });
+}
+
+// Reutiliza .import-mode-opt (tarjeta seleccionable tipo radio, ya usada en
+// el selector de modo de importación por foto) en vez de crear un componente
+// nuevo. Cada opción se aplica al instante (settings.setTheme -> emite
+// 'prefs:changed' -> js/app.js llama a theme.applyTheme) para que se vea el
+// cambio sin cerrar el sheet; al cerrarlo se refresca el hub para que la fila
+// "Tema" muestre el nombre ya actualizado.
+function openTemaSheet(mount) {
+  openSheet(`
+    <h3 class="type-headline" style="margin-bottom:4px;">Tema</h3>
+    <p class="type-caption text-faint" style="margin-bottom:var(--space-4);">Se aplica al instante y se recuerda al volver a abrir la app.</p>
+    <div class="stack" id="theme-list">
+      ${THEMES.map((t) => `
+        <button type="button" class="import-mode-opt ${t.key === settings.getTheme() ? 'import-mode-opt--active' : ''}" data-theme-key="${t.key}">
+          <div class="row" style="justify-content:flex-start; align-items:center; gap:var(--space-3);">
+            <span class="theme-swatch">
+              <span style="background:${t.preview.bg};"></span>
+              <span style="background:${t.preview.surface};"></span>
+              <span style="background:${t.preview.accent};"></span>
+            </span>
+            <div class="type-headline">${t.label}</div>
+          </div>
+        </button>
+      `).join('')}
+    </div>
+  `, {
+    onMount: (sheet) => {
+      sheet.querySelectorAll('[data-theme-key]').forEach((opt) => {
+        opt.addEventListener('click', async () => {
+          await settings.setTheme(opt.dataset.themeKey);
+          sheet.querySelectorAll('[data-theme-key]').forEach((o) => o.classList.toggle('import-mode-opt--active', o === opt));
+        });
+      });
+    },
+    onClose: () => render(mount),
   });
 }

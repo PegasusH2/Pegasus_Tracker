@@ -62,8 +62,11 @@
   color-scheme: light dark;
 }
 
+/* El modo oscuro automático del sistema solo aplica al tema "Predeterminado"
+   — si el usuario ha elegido a propósito "Blanco" o "Queens" (ver
+   js/core/theme.js), esos temas son fijos y no deben competir con el SO. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="white"]):not([data-theme="queens"]) {
     /* Paleta oficial PEGASUS (modo oscuro) */
     --bg: #0B0B0B;
     --surface: #141414;
@@ -222,3 +225,72 @@ button {
   to { opacity: 1; transform: translateY(0); }
 }
 .view-enter { animation: fadeSlideUp var(--dur-medium) var(--ease); }
+
+/* ============================================================
+   Tema "Blanco" — premium, claro, fijo (ignora el modo oscuro del
+   sistema a propósito, ver el guard de arriba). Mismo acento rojo que
+   el tema Predeterminado, pero con neutros más cálidos/diferenciados
+   y sombras más suaves — para no leerse como "el claro de siempre".
+   Aplicado por js/core/theme.js vía [data-theme] en <html>.
+   ============================================================ */
+:root[data-theme="white"] {
+  --bg: #FAFAFA;
+  --surface: #FFFFFF;
+  --surface-2: #F2F2F1;
+  --border: rgba(20, 20, 20, 0.08);
+  --overlay: rgba(0, 0, 0, 0.35);
+
+  --text: #1A1A1A;
+  --text-secondary: rgba(26, 26, 26, 0.58);
+  --text-tertiary: rgba(26, 26, 26, 0.32);
+
+  --accent: #FF3B30;
+  --accent-soft: rgba(255, 59, 48, 0.08);
+  --accent-contrast: #FFFFFF;
+  --warn: #6E6E73;
+  --warn-soft: rgba(20, 20, 20, 0.06);
+  --warn-contrast: #FFFFFF;
+  --danger: #FF3B30;
+  --danger-soft: rgba(255, 59, 48, 0.08);
+  --danger-contrast: #FFFFFF;
+
+  --nav-bg: rgba(255, 255, 255, 0.82);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.03), 0 10px 24px rgba(0, 0, 0, 0.045);
+  --shadow-sheet: 0 -10px 34px rgba(0, 0, 0, 0.1);
+}
+
+/* ============================================================
+   Tema "4 the Queens" — blanco predominante + rosa como acento
+   estratégico (botones, estados activos, progreso, iconos). Los
+   neutros llevan solo un WHISPER de tinte cálido/rosado (nunca gris
+   puro) para dar cohesión sin que "todo sea rosa". --danger se
+   mantiene un rojo diferenciable del rosa de --accent, para que un
+   error nunca se confunda con un botón/acento de marca; --warn sigue
+   siendo neutro (gris-malva apagado), no un tercer color saturado —
+   mismo principio de "máximo 2 colores" que ya sigue el Predeterminado.
+   ============================================================ */
+:root[data-theme="queens"] {
+  --bg: #FDFBFC;
+  --surface: #FFFFFF;
+  --surface-2: #F7EEF2;
+  --border: rgba(120, 30, 70, 0.1);
+  --overlay: rgba(40, 10, 25, 0.35);
+
+  --text: #1F1418;
+  --text-secondary: rgba(31, 20, 24, 0.58);
+  --text-tertiary: rgba(31, 20, 24, 0.32);
+
+  --accent: #D6336C;
+  --accent-soft: rgba(214, 51, 108, 0.1);
+  --accent-contrast: #FFFFFF;
+  --warn: #6E545B;
+  --warn-soft: rgba(110, 84, 91, 0.08);
+  --warn-contrast: #FFFFFF;
+  --danger: #D63A3A;
+  --danger-soft: rgba(214, 58, 58, 0.08);
+  --danger-contrast: #FFFFFF;
+
+  --nav-bg: rgba(255, 255, 255, 0.84);
+  --shadow-card: 0 1px 3px rgba(90, 20, 50, 0.04), 0 10px 24px rgba(90, 20, 50, 0.05);
+  --shadow-sheet: 0 -10px 34px rgba(90, 20, 50, 0.12);
+}

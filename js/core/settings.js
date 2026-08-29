@@ -19,7 +19,10 @@ const DEFAULTS = {
   deviceId: null, // UUID estable de esta instalación (ver js/core/device.js) — se genera una sola vez, no lleva info del dispositivo real
   lastSyncedAt: null, // ISO string — marca de agua de la última sincronización completada con éxito (ver js/core/sync.js)
   localDataMigrated: false, // ya se ofreció/hizo la subida inicial de datos locales al crear/iniciar sesión por primera vez en este dispositivo
+  theme: 'default', // 'default' | 'white' | 'queens' — ver js/core/theme.js (único módulo que aplica esto al DOM)
 };
+
+const VALID_THEMES = ['default', 'white', 'queens'];
 
 let cache = { ...DEFAULTS };
 let loaded = false;
@@ -38,7 +41,7 @@ function clampUnits(state) {
 }
 
 export async function loadSettingsCache() {
-  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked, deviceId, lastSyncedAt, localDataMigrated] = await Promise.all([
+  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked, deviceId, lastSyncedAt, localDataMigrated, theme] = await Promise.all([
     repo.getSetting('onboardingCompleted', DEFAULTS.onboardingCompleted),
     repo.getSetting('userName', DEFAULTS.userName),
     repo.getSetting('weightUnitsEnabled', DEFAULTS.weightUnitsEnabled),
@@ -52,8 +55,9 @@ export async function loadSettingsCache() {
     repo.getSetting('deviceId', DEFAULTS.deviceId),
     repo.getSetting('lastSyncedAt', DEFAULTS.lastSyncedAt),
     repo.getSetting('localDataMigrated', DEFAULTS.localDataMigrated),
+    repo.getSetting('theme', DEFAULTS.theme),
   ]);
-  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked, deviceId, lastSyncedAt, localDataMigrated });
+  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked, deviceId, lastSyncedAt, localDataMigrated, theme: VALID_THEMES.includes(theme) ? theme : DEFAULTS.theme });
   loaded = true;
   return cache;
 }
@@ -169,6 +173,16 @@ export function getLastSyncedAt() { ensureLoaded(); return cache.lastSyncedAt; }
 export async function setLastSyncedAt(iso) {
   cache.lastSyncedAt = iso;
   await repo.setSetting('lastSyncedAt', iso);
+}
+
+// Tema visual — ver js/core/theme.js (aplica esto al DOM; aquí solo se
+// persiste, mismo patrón que el resto de preferencias).
+export function getTheme() { ensureLoaded(); return cache.theme; }
+export async function setTheme(theme) {
+  if (!VALID_THEMES.includes(theme)) throw new Error('Tema no válido');
+  cache.theme = theme;
+  await repo.setSetting('theme', theme);
+  emit('prefs:changed', { key: 'theme' });
 }
 
 // "¿ya se ofreció subir los datos locales a la cuenta?" — solo evita repetir

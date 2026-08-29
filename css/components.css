@@ -414,8 +414,22 @@
 }
 .action-card-chevron svg { width: 14px; height: 14px; }
 
+/* Previsualización de un tema (Ajustes > Tema) — 3 círculos superpuestos
+   (fondo/superficie/acento) en el color LITERAL de ese tema, no en variables
+   CSS (tiene que poder mostrar el aspecto de un tema que no está activo). */
+.theme-swatch { display: inline-flex; flex-shrink: 0; }
+.theme-swatch span {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  margin-left: -8px;
+}
+.theme-swatch span:first-child { margin-left: 0; }
+
 /* Selector de modo de importación por foto (Detectar automáticamente / Una
-   rutina / Programa completo) — tarjetas seleccionables tipo radio. */
+   rutina / Programa completo) — tarjetas seleccionables tipo radio. También
+   reutilizado por el selector de Tema (Ajustes). */
 .import-mode-opt {
   display: block;
   width: 100%;
