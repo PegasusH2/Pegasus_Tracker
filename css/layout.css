@@ -279,19 +279,21 @@ main.view.view--focus {
 
 /* Firma "4 the Queens" — solo con ese tema (ver el <svg
    class="brand-queens-signature"> de index.html). Sustituye al lema normal
-   en el MISMO sitio (misma posición en los 3 temas, justo bajo "PEGASUS") en
-   vez de añadirse como una línea extra. Cada letra es su propio <path>, YA
-   con el relleno sólido definitivo (nunca hueco) — el trazado real, extraído
-   una vez de Dancing Script Semibold con fontTools (la fuente en sí ya no
-   hace falta en tiempo de ejecución, solo se usó para generar estos
-   trazados).
-   Se revela con clip-path por letra (barato de animar: nada de
-   stroke-dasharray sobre curvas con cientos de puntos, que iba a tirones
-   sobre todo en móvil) — cada letra tiene su propio animation-delay
-   (inline, en index.html) para que aparezcan en orden, de izquierda a
-   derecha, como si se escribieran a mano. Ver MIN_QUEENS_SPLASH_MS en
-   js/app.js — mantiene el splash visible el tiempo justo para que la
-   última letra siempre termine de aparecer, nunca se corta. */
+   en el MISMO sitio (misma posición en los 3 temas, justo bajo "PEGASUS").
+   Un único <path> (los 10 caracteres unidos, extraído una vez de Dancing
+   Script Semibold con fontTools) con el relleno sólido definitivo desde el
+   principio — nunca hueco, nunca por fases. Se revela con UN SOLO barrido
+   continuo de izquierda a derecha (clip-path), como el logo de Disney al
+   principio de una película: una sola línea recorriendo todo el texto de un
+   tirón, no letra por letra.
+   Se descartó stroke-dasharray sobre el trazado real de las curvas: con
+   tanto bucle/entrada-salida de pluma, el avance a lo largo de la curva NO
+   es proporcional al avance visual de izquierda a derecha (una letra con
+   una curva larga y apretada "gasta" mucho recorrido sin apenas avanzar en
+   horizontal) — se veía a saltos, no fluido. clip-path avanza por posición
+   horizontal real, así que el barrido es perfectamente uniforme.
+   Ver QUEENS_SIGNATURE_END_MS en js/app.js — mantiene el splash visible el
+   tiempo justo para que el barrido siempre termine, nunca se corta. */
 #app-splash .brand-queens-signature { display: none; }
 :root[data-theme="queens"] #app-splash .brand-tagline { display: none; }
 :root[data-theme="queens"] #app-splash .brand-queens-signature {
@@ -301,12 +303,12 @@ main.view.view--focus {
   margin: var(--space-3) auto 0;
   overflow: visible;
 }
-#app-splash .brand-queens-letter {
+#app-splash .brand-queens-fill {
   fill: var(--accent);
   clip-path: inset(0 100% 0 0);
-  animation: queensLetterReveal 0.28s ease-out forwards;
+  animation: queensSignatureReveal 1.3s linear 0.4s 1 normal forwards;
 }
-@keyframes queensLetterReveal {
+@keyframes queensSignatureReveal {
   to { clip-path: inset(0 0 0 0); }
 }
 

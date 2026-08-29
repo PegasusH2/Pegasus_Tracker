@@ -28,15 +28,17 @@ import { initTheme, applyTheme } from './core/theme.js';
 // del arranque (settings, tema, comprobación de onboarding) termine antes.
 const APP_BOOT_STARTED_AT = Date.now();
 const MIN_SPLASH_MS = 2000;
-// La firma "4 the Queens" (10 letras, ver index.html + css/layout.css) tiene
-// que terminar de "escribirse" ANTES de que el splash empiece a desvanecerse
-// — si no, el texto se corta a medias. Última letra: animation-delay 1.21s +
-// 0.28s de animación = 1.49s. Estos dos números viven aquí, sueltos, porque
-// son producto de las constantes usadas al generar el SVG (no algo que se
-// pueda leer del DOM antes de que la animación empiece) — si alguna vez se
-// retocan esos tiempos, hay que actualizar esto también.
-const QUEENS_SIGNATURE_END_MS = 1490;
-const QUEENS_SIGNATURE_MARGIN_MS = 400;
+// El trazo único de la firma "4 the Queens" (ver index.html + css/layout.css)
+// tiene que terminar de recorrer el texto ANTES de que el splash empiece a
+// desvanecerse — si no, se corta a medias. animation-delay 0.4s + 1.3s de
+// animación = 1.7s. Estos dos números viven aquí, sueltos, porque son
+// producto de las constantes usadas al generar el SVG (no algo que se pueda
+// leer del DOM antes de que la animación empiece) — si alguna vez se retocan
+// esos tiempos, hay que actualizar esto también.
+const QUEENS_SIGNATURE_END_MS = 1700;
+// 400ms de colchón de seguridad + 500ms extra a propósito, para poder leer
+// la firma ya completa un momento antes de que el splash se desvanezca.
+const QUEENS_SIGNATURE_MARGIN_MS = 900;
 
 function hideSplash() {
   const splash = document.getElementById('app-splash');
