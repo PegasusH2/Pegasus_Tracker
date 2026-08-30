@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fitness-tracker-v69';
+const CACHE_VERSION = 'fitness-tracker-v70';
 
 const PRECACHE_URLS = [
   './',
@@ -50,8 +50,8 @@ const PRECACHE_URLS = [
   './js/views/settings-hub.js',
   './js/views/settings-account.js',
   './js/views/onboarding.js',
+  './js/core/pegasus-nutrition.js',
   './js/views/nutrition-macros.js',
-  './js/views/nutrition-diet.js',
   './js/views/nutrition-history.js',
   './icons/icon-32.png',
   './icons/icon-180.png',

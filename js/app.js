@@ -16,9 +16,7 @@ import { renderSettingsBackup } from './views/settings-backup.js';
 import { renderSettingsHub } from './views/settings-hub.js';
 import { renderSettingsAccount } from './views/settings-account.js';
 import { renderNutritionMacros } from './views/nutrition-macros.js';
-import { renderNutritionDiet } from './views/nutrition-diet.js';
 import { renderNutritionHistory } from './views/nutrition-history.js';
-import { renderNutritionConfig } from './views/nutrition-config.js';
 import { hasExistingUserData, runOnboarding } from './views/onboarding.js';
 import { NAV_ICONS } from './core/ui.js';
 import { on, toast } from './core/store.js';
@@ -62,22 +60,15 @@ function visibleProgresoSubtabs() {
 
 const NUTRICION_SUBTABS = [
   { key: 'macros', label: 'Macros', path: '/nutricion', sectionKey: 'macros' },
-  { key: 'dieta', label: 'Dieta', path: '/nutricion/dieta', sectionKey: 'dieta' },
   { key: 'historico', label: 'Histórico', path: '/nutricion/historico', sectionKey: 'historico' },
 ];
 
-// nutricionSections controla qué pestañas se VEN (Personalizar); nutricionMode
-// controla qué sistema(s) tienen contenido real configurado — ninguno de los
-// dos sustituye al otro (ver plan de Nutrición). Histórico solo depende de
-// Personalizar: es útil sea cual sea el modo.
+// nutricionSections controla qué pestañas se VEN (Personalizar) — los datos
+// en sí vienen en vivo del backend real de Pegasus Nutrition, ver
+// js/core/pegasus-nutrition.js.
 function visibleNutricionSubtabs() {
   const sections = settings.getNutricionSections();
-  const mode = settings.getNutricionMode();
-  return NUTRICION_SUBTABS.filter((s) => {
-    if (s.key === 'macros') return sections.macros && (mode === 'macros' || mode === 'ambos');
-    if (s.key === 'dieta') return sections.dieta && (mode === 'dieta' || mode === 'ambos');
-    return sections[s.sectionKey];
-  });
+  return NUTRICION_SUBTABS.filter((s) => sections[s.sectionKey]);
 }
 
 function parseHash() {
@@ -120,17 +111,11 @@ function matchRoute(segments) {
 
   if (root === 'nutricion') {
     const sections = settings.getNutricionSections();
-    const mode = settings.getNutricionMode();
-    const macrosOn = sections.macros && (mode === 'macros' || mode === 'ambos');
-    const dietaOn = sections.dieta && (mode === 'dieta' || mode === 'ambos');
-    if (sub === 'configurar') return { view: renderNutritionConfig, tab: 'nutricion', subtab: null, focusMode: true };
     if (!sub) {
-      if (macrosOn) return { view: renderNutritionMacros, tab: 'nutricion', subtab: 'macros' };
-      if (dietaOn) return { view: renderNutritionDiet, tab: 'nutricion', subtab: 'dieta' };
+      if (sections.macros) return { view: renderNutritionMacros, tab: 'nutricion', subtab: 'macros' };
       if (sections.historico) return { view: renderNutritionHistory, tab: 'nutricion', subtab: 'historico' };
       return { view: renderHome, tab: 'home' };
     }
-    if (sub === 'dieta' && dietaOn) return { view: renderNutritionDiet, tab: 'nutricion', subtab: 'dieta' };
     if (sub === 'historico' && sections.historico) return { view: renderNutritionHistory, tab: 'nutricion', subtab: 'historico' };
   }
 
@@ -201,7 +186,6 @@ on('auth:recovery', () => navigate('/ajustes/cuenta'));
 on('prefs:changed', ({ key }) => {
   if (key === 'progressSections') renderBottomNav(currentTab);
   if (key === 'nutricionSections') renderBottomNav(currentTab);
-  if (key === 'nutricionMode') { renderBottomNav(currentTab); renderRoute(); }
   if (key === 'theme') applyTheme(settings.getTheme());
 });
 

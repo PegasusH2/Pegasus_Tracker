@@ -33,7 +33,6 @@ const SECTION_LABELS = {
 
 const NUTRICION_SECTION_LABELS = {
   macros: 'Macros',
-  dieta: 'Dieta',
   historico: 'Histórico',
 };
 

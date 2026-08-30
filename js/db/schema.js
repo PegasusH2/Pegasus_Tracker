@@ -547,7 +547,22 @@ db.version(17).stores({
   userPreferences: 'id, key',
 });
 
-export const SCHEMA_VERSION = 17;
+// v18: Nutrición pasa a leer/escribir en vivo contra el backend real de
+// Pegasus Nutrition (nutrition_macro_plan en Supabase, ver
+// js/core/pegasus-nutrition.js) en vez de duplicar datos localmente. La
+// pestaña "Dieta" se retira (ese backend no tiene tablas de dietas/comidas,
+// nada que unificar) y con ella dietPlans/dietMeals/dietFoods;
+// nutritionMacroTargets también desaparece, sustituida por el backend real.
+// Solo contenían planes de ejemplo creados para pruebas visuales esta
+// sesión — sin pérdida real.
+db.version(18).stores({
+  dietPlans: null,
+  dietMeals: null,
+  dietFoods: null,
+  nutritionMacroTargets: null,
+});
+
+export const SCHEMA_VERSION = 18;
 
 // Tablas cuyas filas se sincronizan con Supabase cuando hay sesión activa —
 // ver docs/supabase-sync-design.md para la decisión de alcance (exercises/

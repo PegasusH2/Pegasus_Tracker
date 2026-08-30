@@ -20,9 +20,7 @@ const DEFAULTS = {
   lastSyncedAt: null, // ISO string — marca de agua de la última sincronización completada con éxito (ver js/core/sync.js)
   localDataMigrated: false, // ya se ofreció/hizo la subida inicial de datos locales al crear/iniciar sesión por primera vez en este dispositivo
   theme: 'default', // 'default' | 'white' | 'queens' — ver js/core/theme.js (único módulo que aplica esto al DOM)
-  nutricionSections: { macros: true, dieta: true, historico: true }, // única preferencia que viaja con la cuenta — ver repo.getUserPreference/setUserPreference, no usa repo.getSetting/setSetting como el resto de esta lista
-  nutricionMode: 'macros', // 'macros' | 'dieta' | 'ambos' — qué sistema(s) tienen contenido real (distinto de nutricionSections, que solo oculta/muestra pestañas). También vía user_preferences.
-  nutricionWeekdayTypes: { mon: 'training', tue: 'training', wed: 'training', thu: 'training', fri: 'training', sat: 'training', sun: 'training' },
+  nutricionSections: { macros: true, historico: true }, // única preferencia que viaja con la cuenta — ver repo.getUserPreference/setUserPreference, no usa repo.getSetting/setSetting como el resto de esta lista
 };
 
 const VALID_THEMES = ['default', 'white', 'queens'];
@@ -44,7 +42,7 @@ function clampUnits(state) {
 }
 
 export async function loadSettingsCache() {
-  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked, deviceId, lastSyncedAt, localDataMigrated, theme, nutricionSections, nutricionMode, nutricionWeekdayTypes] = await Promise.all([
+  const [onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked, deviceId, lastSyncedAt, localDataMigrated, theme, nutricionSections] = await Promise.all([
     repo.getSetting('onboardingCompleted', DEFAULTS.onboardingCompleted),
     repo.getSetting('userName', DEFAULTS.userName),
     repo.getSetting('weightUnitsEnabled', DEFAULTS.weightUnitsEnabled),
@@ -60,10 +58,8 @@ export async function loadSettingsCache() {
     repo.getSetting('localDataMigrated', DEFAULTS.localDataMigrated),
     repo.getSetting('theme', DEFAULTS.theme),
     repo.getUserPreference('nutricionSections', DEFAULTS.nutricionSections),
-    repo.getUserPreference('nutricionMode', DEFAULTS.nutricionMode),
-    repo.getUserPreference('nutricionWeekdayTypes', DEFAULTS.nutricionWeekdayTypes),
   ]);
-  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked, deviceId, lastSyncedAt, localDataMigrated, theme: VALID_THEMES.includes(theme) ? theme : DEFAULTS.theme, nutricionSections, nutricionMode, nutricionWeekdayTypes });
+  cache = clampUnits({ onboardingCompleted, userName, weightUnitsEnabled, weightProgressUnit, weightLastInputUnit, progressSections, templatesGridCollapsed, actionsCollapsed, adminSession, devModeUnlocked, deviceId, lastSyncedAt, localDataMigrated, theme: VALID_THEMES.includes(theme) ? theme : DEFAULTS.theme, nutricionSections });
   loaded = true;
   return cache;
 }
@@ -87,8 +83,6 @@ export function isAnyNutricionSectionEnabled() {
   ensureLoaded();
   return Object.values(cache.nutricionSections).some(Boolean);
 }
-export function getNutricionMode() { ensureLoaded(); return cache.nutricionMode; }
-export function getNutricionWeekdayTypes() { ensureLoaded(); return cache.nutricionWeekdayTypes; }
 export function getTemplatesGridCollapsed() { ensureLoaded(); return cache.templatesGridCollapsed; }
 export function getActionsCollapsed() { ensureLoaded(); return cache.actionsCollapsed; }
 
@@ -166,18 +160,6 @@ export async function setNutricionSection(key, enabled) {
   cache.nutricionSections = { ...cache.nutricionSections, [key]: enabled };
   await repo.setUserPreference('nutricionSections', cache.nutricionSections);
   emit('prefs:changed', { key: 'nutricionSections' });
-}
-
-export async function setNutricionMode(mode) {
-  cache.nutricionMode = mode;
-  await repo.setUserPreference('nutricionMode', mode);
-  emit('prefs:changed', { key: 'nutricionMode' });
-}
-
-export async function setNutricionWeekdayType(day, type) {
-  cache.nutricionWeekdayTypes = { ...cache.nutricionWeekdayTypes, [day]: type };
-  await repo.setUserPreference('nutricionWeekdayTypes', cache.nutricionWeekdayTypes);
-  emit('prefs:changed', { key: 'nutricionWeekdayTypes' });
 }
 
 export async function setTemplatesGridCollapsed(value) {

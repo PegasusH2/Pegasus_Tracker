@@ -1,33 +1,39 @@
-// Nutrición · Histórico — versiones pasadas de dieta y macros. Siempre de
-// solo lectura (es un archivo): cada edición ya es una fila nueva por
-// diseño (nunca se sobreescribe una versión anterior, ver
-// repository.js#createDietPlan/addMacroTarget), así que el pasado completo
-// está aquí sin necesitar una tabla aparte de versiones.
-import * as repo from '../db/repository.js';
-import { escapeHtml } from '../core/escape.js';
+// Nutrición · Histórico — versiones pasadas de macros, leídas en vivo del
+// backend real de Pegasus Nutrition (nutrition_macro_plan). Siempre de solo
+// lectura: cada actualización ya es una fila nueva por fecha (ver
+// js/core/pegasus-nutrition.js), así que el pasado completo está aquí sin
+// necesitar nada aparte.
+import * as pegasus from '../core/pegasus-nutrition.js';
+import { getUser } from '../core/auth.js';
 import { formatDate } from '../core/format.js';
-import { DAY_TYPE_LABELS } from '../core/nutrition.js';
+import { navigate } from '../app.js';
 
 export async function renderNutritionHistory(mount) {
-  const [plans, macros] = await Promise.all([repo.listDietPlans(), repo.listMacroTargets()]);
+  const user = await getUser();
+  if (!user) {
+    mount.innerHTML = `
+      <h1 class="type-title" style="margin-bottom:16px;">Histórico</h1>
+      <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tu histórico de Pegasus Nutrition.</div>
+      <button class="btn btn-primary btn-block" id="h-login" style="margin-top:var(--space-4);">Ir a Ajustes › Cuenta</button>
+    `;
+    mount.querySelector('#h-login').addEventListener('click', () => navigate('/ajustes/cuenta'));
+    return;
+  }
 
-  const entries = [
-    ...plans.map((p) => ({ date: p.effectiveDate, dayType: p.dayType ?? 'training', kind: 'Dieta', title: p.name, sub: p.description || '' })),
-    ...macros.map((m) => ({
-      date: m.effectiveDate, dayType: m.dayType ?? 'training', kind: 'Macros', title: `${m.calories ?? '—'} kcal`,
-      sub: [m.proteinG != null ? `P ${m.proteinG}g` : null, m.carbsG != null ? `C ${m.carbsG}g` : null, m.fatG != null ? `G ${m.fatG}g` : null].filter(Boolean).join(' · '),
-    })),
-  ].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const plans = await pegasus.pegasusListMacroPlans();
 
   mount.innerHTML = `
     <h1 class="type-title" style="margin-bottom:16px;">Histórico</h1>
-    ${!entries.length ? `<div class="empty-state">Todavía no hay ningún registro de nutrición.</div>` : `
+    ${!plans.length ? `<div class="empty-state">Todavía no hay ningún registro de macros.</div>` : `
       <div class="grouped-list">
-        ${entries.map((e) => `
+        ${plans.map((p) => `
           <div class="grouped-row">
             <div style="min-width:0;">
-              <div class="type-body">${escapeHtml(e.title)}</div>
-              <div class="type-caption text-faint">${e.kind} · ${formatDate(e.date)} · ${DAY_TYPE_LABELS[e.dayType]}${e.sub ? ` · ${escapeHtml(e.sub)}` : ''}</div>
+              <div class="type-body">${formatDate(p.fecha)}</div>
+              <div class="type-caption text-faint">
+                ON ×${p.diasOn ?? '—'} · P${p.proteinaOn ?? '—'}/C${p.hidratosOn ?? '—'}/G${p.grasasOn ?? '—'}
+                · OFF ×${p.diasOff ?? '—'} · P${p.proteinaOff ?? '—'}/C${p.hidratosOff ?? '—'}/G${p.grasasOff ?? '—'}
+              </div>
             </div>
           </div>
         `).join('')}
