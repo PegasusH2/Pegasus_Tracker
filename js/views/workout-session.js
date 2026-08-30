@@ -1,9 +1,9 @@
 import * as repo from '../db/repository.js';
 import { compareSessions, describeRepsTarget, checkRangeCompletion } from '../core/progression.js';
-import { trendSeries } from '../core/stats.js';
+import { trendSeries, bestRecordsFromHistory } from '../core/stats.js';
 import { formatDate, relativeDays } from '../core/format.js';
 import { escapeHtml } from '../core/escape.js';
-import { openSheet, openConfirmSheet, openExercisePickerSheet, renderInsightCallout, getChartThemeColors, CHECK_ICON } from '../core/ui.js';
+import { openSheet, openConfirmSheet, openExercisePickerSheet, renderInsightCallout, getChartThemeColors, CHECK_ICON, TRASH_ICON, TROPHY_ICON } from '../core/ui.js';
 import { toKg, toUnit, roundForDisplay, inputStep } from '../core/units.js';
 import { getWeightUnitsEnabled, getWeightLastInputUnit } from '../core/settings.js';
 import { toast } from '../core/store.js';
@@ -172,6 +172,16 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
   const history = await repo.getExerciseHistory(exerciseId);
   const sparkValues = trendSeries(history, 'topWeight', { loadMode: exercise.loadMode }).map((p) => p.value).filter((v) => v != null);
 
+  // PR = misma definición ya usada en exercise-detail.js ("Mejor peso"): el
+  // peso más alto levantado nunca, con sus reps y fecha — no una lógica
+  // paralela. El peso corporal se une por fecha (nunca el actual).
+  const records = bestRecordsFromHistory(history, { loadMode: exercise.loadMode });
+  const prBodyWeight = records.bestWeightEntry ? await repo.getBodyWeightNear(records.bestWeightEntry.date) : null;
+
+  // El PR sustituye SOLO al bloque "Última sesión" al deslizar — "Hoy" (las
+  // series de este entrenamiento, editables) vive fuera de .exercise-swipe a
+  // propósito, para que nunca se oculte ni se desplace con el gesto: el
+  // usuario debe poder seguir viendo/editando sus series mientras consulta el PR.
   card.innerHTML = `
     <div class="exercise-card-header">
       <h3 class="ex-title-link" style="cursor:pointer;">${escapeHtml(exercise.name)}</h3>
@@ -180,18 +190,44 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     ${targetCaption(workoutExercise)}
     ${exercise.loadMode === 'perSide' ? `<div class="type-caption text-faint" style="margin-bottom:10px;">Peso por lado/mancuerna — la carga total se calcula ×2.</div>` : ''}
 
-    ${lastEntry ? `
-      <div class="last-session">
-        <div class="section-label">Última sesión · ${relativeDays(lastEntry.workout.date)}</div>
-        ${lastSets.map((s) => `
-          <div class="last-session-set">
-            <span class="set-idx num">${s.setNumber}</span>
-            <span class="num">${weightSummary(s)} × ${s.reps ?? '—'}</span>
-            <span class="text-faint">${[s.rir != null ? `RIR ${s.rir}` : '', s.type && s.type !== 'normal' ? setTypeLabel(s.type).toUpperCase() : ''].filter(Boolean).join(' · ')}</span>
+    <div class="exercise-swipe">
+      <div class="exercise-swipe-pr">
+        <div class="type-body" style="font-weight:700; display:flex; align-items:center; gap:8px; margin-bottom:8px;"><span class="pr-trophy">${TROPHY_ICON}</span>Mejor marca</div>
+        ${records.bestWeightEntry ? `
+          <div class="stat-hero">
+            <div class="stat-hero-value">
+              <span class="type-hero">${roundForDisplay(toUnit(records.bestWeight, soloUnit), 1)}</span>
+              <span class="type-headline text-dim">${soloUnit}</span>
+            </div>
+            <div class="type-caption text-faint">${records.bestWeightEntry.set.reps} repeticiones · ${formatDate(records.bestWeightEntry.date)}</div>
           </div>
-        `).join('') || '<span class="last-session-empty">Sin series registradas</span>'}
+          <div class="row">
+            <div class="stat-tile" style="padding:0;">
+              <div class="stat-label">Peso corporal</div>
+              <div class="stat-value" style="font-size:17px;">${prBodyWeight ? formatTotal(prBodyWeight.weightKg, soloUnit) : 'No registrado'}</div>
+            </div>
+            <div class="stat-tile" style="padding:0;">
+              <div class="stat-label">Fecha</div>
+              <div class="stat-value" style="font-size:17px;">${formatDate(records.bestWeightEntry.date)}</div>
+            </div>
+          </div>
+        ` : `<div class="last-session-empty" style="display:block;">Sin PR registrado</div>`}
       </div>
-    ` : `<div class="last-session-empty" style="margin-bottom:16px; display:block;">Primera vez que registras este ejercicio.</div>`}
+      <div class="exercise-swipe-content">
+        ${lastEntry ? `
+          <div class="last-session">
+            <div class="section-label">Última sesión · ${relativeDays(lastEntry.workout.date)}</div>
+            ${lastSets.map((s) => `
+              <div class="last-session-set">
+                <span class="set-idx num">${s.setNumber}</span>
+                <span class="num">${weightSummary(s)} × ${s.reps ?? '—'}</span>
+                <span class="text-faint">${[s.rir != null ? `RIR ${s.rir}` : '', s.type && s.type !== 'normal' ? setTypeLabel(s.type).toUpperCase() : ''].filter(Boolean).join(' · ')}</span>
+              </div>
+            `).join('') || '<span class="last-session-empty">Sin series registradas</span>'}
+          </div>
+        ` : `<div class="last-session-empty" style="display:block;">Primera vez que registras este ejercicio.</div>`}
+      </div>
+    </div>
 
     <div class="section-label">Hoy</div>
     <div class="sets-list"></div>
@@ -208,6 +244,12 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     const soloVal = s.weight != null ? roundForDisplay(toUnit(s.weight, soloUnit), 1) : '';
     const type = s.type ?? 'normal';
     const rangeDone = checkRangeCompletion(s, workoutExercise);
+    // Objetivo de la rutina para ESTA serie, mostrado solo como pista (nunca
+    // como valor real) — el peso/reps siempre empiezan en blanco de verdad,
+    // ver repository.js#startWorkoutFromTemplate.
+    const targetReps = workoutExercise.targetRepsSequence?.[s.setNumber - 1] ?? workoutExercise.targetRepsMin ?? workoutExercise.targetRepsMax ?? null;
+    const targetWeightKg = workoutExercise.targetWeightSequence?.[s.setNumber - 1] ?? workoutExercise.targetWeightKg ?? null;
+    const targetWeightDisplay = targetWeightKg != null ? roundForDisplay(toUnit(targetWeightKg, soloUnit), 1) : null;
     return `
     <div class="set-group">
     <div class="set-type-row">
@@ -222,46 +264,52 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       </div>
       ${rangeDone ? '<span class="set-range-done">✓ Rango completado</span>' : ''}
     </div>
-    <div class="set-row ${(dualUnit || isBarbell) ? 'set-row--dual-unit' : ''}" data-set-id="${s.id}">
-      <span class="set-idx">${s.setNumber}</span>
-      ${isBarbell ? `
-        <div class="set-field set-weight-dual">
-          <div class="set-weight-col">
-            <input type="number" inputmode="decimal" step="${inputStep(singleUnit, 'set')}" class="input-bar-weight" value="${s.barWeightKg != null ? roundForDisplay(toUnit(s.barWeightKg, singleUnit), 1) : ''}" placeholder="0" />
-            <span class="set-unit">barra ${singleUnit}</span>
-          </div>
-          <div class="set-weight-col">
-            <input type="number" inputmode="decimal" step="${inputStep(singleUnit, 'set')}" class="input-plates" value="${s.plateWeightPerSideKg != null ? roundForDisplay(toUnit(s.plateWeightPerSideKg, singleUnit), 1) : ''}" placeholder="0" />
-            <span class="set-unit">disco ${singleUnit}</span>
-          </div>
-        </div>
-      ` : dualUnit ? `
-        <div class="set-field set-weight-dual">
-          <div class="set-weight-col">
-            <input type="number" inputmode="decimal" step="${inputStep('kg', 'set')}" class="input-weight-kgpart" value="${s.weightKgPart ?? ''}" placeholder="0" />
-            <span class="set-unit">kg</span>
-          </div>
-          <div class="set-weight-col">
-            <input type="number" inputmode="decimal" step="${inputStep('lb', 'set')}" class="input-weight-lbpart" value="${s.weightLbPart ?? ''}" placeholder="0" />
-            <span class="set-unit">lb</span>
-          </div>
-        </div>
-      ` : `
-        <div class="set-field">
-          <input type="number" inputmode="decimal" step="${inputStep(soloUnit, 'set')}" class="input-weight" value="${soloVal}" placeholder="—" />
-          <span class="set-unit">${soloUnit}</span>
-        </div>
-      `}
-      <div class="set-field">
-        <input type="number" inputmode="numeric" class="input-reps" value="${s.reps ?? ''}" placeholder="—" />
-        <span class="set-unit">reps</span>
+    <div class="set-swipe" data-set-id="${s.id}">
+      <div class="set-swipe-delete">
+        <button type="button" class="set-swipe-delete-btn" aria-label="Eliminar serie">${TRASH_ICON}</button>
       </div>
-      <div class="set-field">
-        <input type="number" inputmode="numeric" min="0" max="10" class="input-rir" value="${s.rir ?? ''}" placeholder="—" />
-        <span class="set-unit">RIR</span>
+      <div class="set-swipe-content">
+        <div class="set-row ${(dualUnit || isBarbell) ? 'set-row--dual-unit' : ''}" data-set-id="${s.id}">
+          <span class="set-idx">${s.setNumber}</span>
+          ${isBarbell ? `
+            <div class="set-field set-weight-dual">
+              <div class="set-weight-col">
+                <input type="number" inputmode="decimal" step="${inputStep(singleUnit, 'set')}" class="input-bar-weight" value="${s.barWeightKg != null ? roundForDisplay(toUnit(s.barWeightKg, singleUnit), 1) : ''}" placeholder="0" />
+                <span class="set-unit">barra ${singleUnit}</span>
+              </div>
+              <div class="set-weight-col">
+                <input type="number" inputmode="decimal" step="${inputStep(singleUnit, 'set')}" class="input-plates" value="${s.plateWeightPerSideKg != null ? roundForDisplay(toUnit(s.plateWeightPerSideKg, singleUnit), 1) : ''}" placeholder="0" />
+                <span class="set-unit">disco ${singleUnit}</span>
+              </div>
+            </div>
+          ` : dualUnit ? `
+            <div class="set-field set-weight-dual">
+              <div class="set-weight-col">
+                <input type="number" inputmode="decimal" step="${inputStep('kg', 'set')}" class="input-weight-kgpart" value="${s.weightKgPart ?? ''}" placeholder="0" />
+                <span class="set-unit">kg</span>
+              </div>
+              <div class="set-weight-col">
+                <input type="number" inputmode="decimal" step="${inputStep('lb', 'set')}" class="input-weight-lbpart" value="${s.weightLbPart ?? ''}" placeholder="0" />
+                <span class="set-unit">lb</span>
+              </div>
+            </div>
+          ` : `
+            <div class="set-field">
+              <input type="number" inputmode="decimal" step="${inputStep(soloUnit, 'set')}" class="input-weight" value="${soloVal}" placeholder="${targetWeightDisplay ?? '—'}" />
+              <span class="set-unit">${soloUnit}</span>
+            </div>
+          `}
+          <div class="set-field">
+            <input type="number" inputmode="numeric" class="input-reps" value="${s.reps ?? ''}" placeholder="${targetReps ?? '—'}" />
+            <span class="set-unit">reps</span>
+          </div>
+          <div class="set-field">
+            <input type="number" inputmode="numeric" min="0" max="10" class="input-rir" value="${s.rir ?? ''}" placeholder="—" />
+            <span class="set-unit">RIR</span>
+          </div>
+          <button type="button" class="set-check ${done ? 'done' : ''} ${!done && !canMarkDone ? 'set-check--disabled' : ''}" data-set-id="${s.id}" aria-label="${done ? 'Marcar como no realizada' : 'Marcar como realizada'}">${CHECK_ICON}</button>
+        </div>
       </div>
-      <button type="button" class="set-check ${done ? 'done' : ''} ${!done && !canMarkDone ? 'set-check--disabled' : ''}" data-set-id="${s.id}" aria-label="${done ? 'Marcar como no realizada' : 'Marcar como realizada'}">${CHECK_ICON}</button>
-      <button class="set-remove">✕</button>
     </div>
     ${(dualUnit || isBarbell) && s.weight != null ? `
       <div class="set-total">
@@ -351,8 +399,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       const barWeightKg = e.target.value === '' ? null : Number(e.target.value);
       const plateWeightPerSideKg = current.plateWeightPerSideKg ?? null;
       const weight = barWeightKg == null && plateWeightPerSideKg == null ? null : (barWeightKg ?? 0) + 2 * (plateWeightPerSideKg ?? 0);
-      const changes = { weight, barWeightKg, plateWeightPerSideKg };
-      if (weight == null) changes.done = false;
+      const changes = { weight, barWeightKg, plateWeightPerSideKg, done: deriveDoneOnCommit(current, weight, current.reps) };
       await repo.updateSet(setId, changes);
       await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
     });
@@ -390,6 +437,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
 
     if (barWeightInput && platesInput) {
       async function commitBarbell() {
+        const current = currentSets.find((s) => s.id === setId);
         const barRaw = barWeightInput.value;
         const platesRaw = platesInput.value;
         if (barRaw === '' && platesRaw === '') {
@@ -398,7 +446,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
           const barWeightKg = barRaw === '' ? 0 : toKg(barRaw, singleUnit);
           const plateWeightPerSideKg = platesRaw === '' ? 0 : toKg(platesRaw, singleUnit);
           const weight = barWeightKg + 2 * plateWeightPerSideKg;
-          await repo.updateSet(setId, { weight, barWeightKg: barRaw === '' ? null : barWeightKg, plateWeightPerSideKg: platesRaw === '' ? null : plateWeightPerSideKg });
+          await repo.updateSet(setId, { weight, barWeightKg: barRaw === '' ? null : barWeightKg, plateWeightPerSideKg: platesRaw === '' ? null : plateWeightPerSideKg, done: deriveDoneOnCommit(current, weight, current.reps) });
         }
         await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
       }
@@ -408,6 +456,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       // kg y lb son componentes que se SUMAN (discos combinados) — cada uno
       // se guarda tal cual se escribe, sin recalcular el otro.
       async function commitParts() {
+        const current = currentSets.find((s) => s.id === setId);
         const kgRaw = kgPartInput.value;
         const lbRaw = lbPartInput.value;
         if (kgRaw === '' && lbRaw === '') {
@@ -416,7 +465,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
           const kgPart = kgRaw === '' ? 0 : Number(kgRaw);
           const lbPart = lbRaw === '' ? 0 : Number(lbRaw);
           const weight = kgPart + toKg(lbPart, 'lb');
-          await repo.updateSet(setId, { weight, weightKgPart: kgRaw === '' ? null : kgPart, weightLbPart: lbRaw === '' ? null : lbPart });
+          await repo.updateSet(setId, { weight, weightKgPart: kgRaw === '' ? null : kgPart, weightLbPart: lbRaw === '' ? null : lbPart, done: deriveDoneOnCommit(current, weight, current.reps) });
         }
         await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
       }
@@ -424,19 +473,19 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       lbPartInput.addEventListener('blur', commitParts);
     } else if (soloInput) {
       soloInput.addEventListener('blur', async (e) => {
+        const current = currentSets.find((s) => s.id === setId);
         const raw = e.target.value;
         const value = raw === '' ? null : toKg(raw, soloUnit);
-        const changes = { weight: value, weightKgPart: null, weightLbPart: null };
-        if (value == null) changes.done = false;
+        const changes = { weight: value, weightKgPart: null, weightLbPart: null, done: deriveDoneOnCommit(current, value, current.reps) };
         await repo.updateSet(setId, changes);
         await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
       });
     }
 
     row.querySelector('.input-reps').addEventListener('blur', async (e) => {
+      const current = currentSets.find((s) => s.id === setId);
       const value = e.target.value === '' ? null : Number(e.target.value);
-      const changes = { reps: value };
-      if (value == null) changes.done = false;
+      const changes = { reps: value, done: deriveDoneOnCommit(current, current.weight, value) };
       await repo.updateSet(setId, changes);
       await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
     });
@@ -445,23 +494,24 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       await repo.updateSet(setId, { rir: value });
       await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
     });
-    row.querySelector('.set-remove').addEventListener('click', async () => {
-      await repo.deleteSet(setId);
-      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
-    });
   });
+
+  attachSetSwipeHandlers(setsList, card, workout, exerciseId, workoutExerciseId, defaultUnit);
+  attachExercisePrSwipe(card);
 
   card.querySelector('.add-set').addEventListener('click', async (e) => {
     e.target.disabled = true; // evita duplicar el número de serie si se pulsa varias veces rápido
-    const template = lastSets[currentSets.length];
-    const defaultBar = isBarbell && !template ? bars.find((b) => b.id === exercise.defaultBarId) : null;
+    // Peso y reps SIEMPRE en blanco — nunca se heredan de la última sesión
+    // (ver el mismo criterio en repository.js#startWorkoutFromTemplate). La
+    // barra por defecto del ejercicio sí se mantiene, no es "peso heredado".
+    const defaultBar = isBarbell ? bars.find((b) => b.id === exercise.defaultBarId) : null;
     await repo.addSet(workoutExerciseId, {
-      weight: template?.weight ?? null,
-      weightKgPart: template?.weightKgPart ?? null,
-      weightLbPart: template?.weightLbPart ?? null,
-      barWeightKg: template?.barWeightKg ?? defaultBar?.weightKg ?? null,
-      plateWeightPerSideKg: template?.plateWeightPerSideKg ?? null,
-      reps: template?.reps ?? null,
+      weight: null,
+      weightKgPart: null,
+      weightLbPart: null,
+      barWeightKg: defaultBar?.weightKg ?? null,
+      plateWeightPerSideKg: null,
+      reps: null,
     });
     await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
   });
@@ -507,8 +557,160 @@ function weightSummary(s) {
   return `${formatTotal(s.weight, 'kg')} · ${formatTotal(s.weight, 'lb')}`;
 }
 
+// Deriva el nuevo `done` a partir de si la serie ERA y ES completa (peso +
+// reps) tras este cambio. Solo fuerza a `true` en el instante en que PASA a
+// estar completa — nunca pisa un desmarcado manual si ya estaba completa
+// antes de este cambio (p.ej. el usuario la desmarca a mano para repetirla y
+// luego corrige un valor: no queremos volver a marcarla sola).
+function deriveDoneOnCommit(current, newWeight, newReps) {
+  const wasComplete = current.weight != null && current.reps != null;
+  const isComplete = newWeight != null && newReps != null;
+  if (!isComplete) return false;
+  return wasComplete ? current.done : true;
+}
+
+const SWIPE_DELETE_WIDTH = 72; // ancho de la papelera revelada, ver .set-swipe-delete
+const SWIPE_AXIS_PX = 8; // umbral para distinguir arrastre horizontal de scroll vertical
+
+// Eliminar una serie ya no tiene un botón fijo: hay que deslizarla horizontalmente
+// para revelar la papelera detrás, y solo se borra tras confirmar en un sheet.
+// Un solo gesto -> una sola fila abierta a la vez (openSwipeClose, closure por
+// tarjeta) y un movimiento predominantemente vertical se cede al scroll nativo
+// sin tocar los inputs/check de la fila.
+function attachSetSwipeHandlers(setsList, card, workout, exerciseId, workoutExerciseId, defaultUnit) {
+  let openSwipeClose = null;
+
+  setsList.querySelectorAll('.set-swipe').forEach((swipe) => {
+    const content = swipe.querySelector('.set-swipe-content');
+    const setId = swipe.dataset.setId;
+    let startX = 0, startY = 0, dragging = false, axis = null, baseTranslate = 0, currentTranslate = 0;
+
+    const setTranslate = (x) => {
+      currentTranslate = x;
+      content.style.transform = x ? `translateX(${x}px)` : '';
+    };
+    const close = () => {
+      setTranslate(0);
+      if (openSwipeClose === close) openSwipeClose = null;
+    };
+
+    content.addEventListener('pointerdown', (e) => {
+      if (openSwipeClose && openSwipeClose !== close) openSwipeClose();
+      startX = e.clientX;
+      startY = e.clientY;
+      dragging = true;
+      axis = null;
+      baseTranslate = currentTranslate;
+    });
+
+    content.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (axis === null) {
+        if (Math.abs(dx) < SWIPE_AXIS_PX && Math.abs(dy) < SWIPE_AXIS_PX) return;
+        axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+        if (axis === 'y') { dragging = false; return; } // deja actuar al scroll nativo
+        content.classList.add('set-swipe--dragging');
+      }
+      setTranslate(Math.min(0, Math.max(-SWIPE_DELETE_WIDTH - 24, baseTranslate + dx)));
+    });
+
+    const endDrag = () => {
+      if (!dragging) return;
+      dragging = false;
+      content.classList.remove('set-swipe--dragging');
+      if (axis === null) {
+        if (baseTranslate < 0) close(); // toque limpio sobre una fila ya abierta -> la cierra
+        return;
+      }
+      if (axis !== 'x') { axis = null; return; }
+      axis = null;
+      if (currentTranslate <= -SWIPE_DELETE_WIDTH / 2) {
+        setTranslate(-SWIPE_DELETE_WIDTH);
+        openSwipeClose = close;
+      } else {
+        close();
+      }
+    };
+    content.addEventListener('pointerup', endDrag);
+    content.addEventListener('pointercancel', endDrag);
+    content.addEventListener('pointerleave', endDrag);
+
+    swipe.querySelector('.set-swipe-delete-btn').addEventListener('click', async () => {
+      const ok = await openConfirmSheet('¿Eliminar esta serie? Esta acción no se puede deshacer.', { confirmLabel: 'Eliminar' });
+      if (!ok) { close(); return; }
+      await repo.deleteSet(setId);
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+    });
+  });
+}
+
+// Deslizar el ejercicio COMPLETO hacia la izquierda revela el PR detrás,
+// mismo patrón que attachSetSwipeHandlers pero a ancho completo y solo se
+// abre hacia la izquierda. Ignora cualquier gesto que empiece dentro de un
+// .set-swipe (cada serie ya gestiona su propio swipe de borrado) para que
+// ambas interacciones nunca compitan por el mismo gesto.
+function attachExercisePrSwipe(card) {
+  const swipe = card.querySelector('.exercise-swipe');
+  if (!swipe) return;
+  const content = swipe.querySelector('.exercise-swipe-content');
+  let startX = 0, startY = 0, dragging = false, axis = null, baseTranslate = 0, currentTranslate = 0, openWidth = 0;
+
+  const setTranslate = (x) => {
+    currentTranslate = x;
+    content.style.transform = x ? `translateX(${x}px)` : '';
+  };
+  const close = () => setTranslate(0);
+
+  content.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.set-swipe')) return;
+    openWidth = content.getBoundingClientRect().width;
+    startX = e.clientX;
+    startY = e.clientY;
+    dragging = true;
+    axis = null;
+    baseTranslate = currentTranslate;
+  });
+
+  content.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (axis === null) {
+      if (Math.abs(dx) < SWIPE_AXIS_PX && Math.abs(dy) < SWIPE_AXIS_PX) return;
+      axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      if (axis === 'y') { dragging = false; return; } // deja actuar al scroll nativo
+      content.classList.add('exercise-swipe--dragging');
+    }
+    e.preventDefault();
+    setTranslate(Math.min(0, Math.max(-openWidth, baseTranslate + dx)));
+  });
+
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging = false;
+    content.classList.remove('exercise-swipe--dragging');
+    if (axis === null) {
+      if (baseTranslate < 0) close(); // toque limpio con el PR ya abierto -> lo cierra
+      return;
+    }
+    if (axis !== 'x') { axis = null; return; }
+    axis = null;
+    if (currentTranslate <= -openWidth / 2) {
+      setTranslate(-openWidth);
+    } else {
+      close();
+    }
+  };
+  content.addEventListener('pointerup', endDrag);
+  content.addEventListener('pointercancel', endDrag);
+  content.addEventListener('pointerleave', endDrag);
+}
+
 // Objetivo planeado (congelado al crear la sesión desde una plantilla) — solo
-// informativo, nunca se prellena en los campos de la serie salvo las reps.
+// informativo, nunca se prellena como valor real en los campos de la serie
+// (ver el placeholder de peso/reps y deriveDoneOnCommit más abajo).
 function targetCaption(we) {
   if (!we) return '';
   const parts = [];

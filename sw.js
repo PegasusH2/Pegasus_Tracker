@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fitness-tracker-v65';
+const CACHE_VERSION = 'fitness-tracker-v68';
 
 const PRECACHE_URLS = [
   './',
@@ -50,13 +50,15 @@ const PRECACHE_URLS = [
   './js/views/settings-hub.js',
   './js/views/settings-account.js',
   './js/views/onboarding.js',
+  './js/views/nutrition-macros.js',
+  './js/views/nutrition-diet.js',
+  './js/views/nutrition-history.js',
+  './js/core/trainer-link.js',
   './icons/icon-32.png',
   './icons/icon-180.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
-  './icons/icon-mono-horse-mask.png',
-  './icons/icon-mono-stripe.png',
   './icons/muscles/icon-pierna.png',
   './icons/muscles/icon-culo.png',
   './icons/muscles/icon-espalda.png',

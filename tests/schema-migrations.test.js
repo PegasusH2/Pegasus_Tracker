@@ -21,8 +21,8 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
   test('crea la base de datos directamente en la última versión sin lanzar', async () => {
     const schema = await import(`../js/db/schema.js?fresh1=${Date.now()}`);
     await schema.db.exercises.toArray(); // fuerza la apertura real
-    assert.equal(schema.SCHEMA_VERSION, 16);
-    assert.equal(schema.db.verno, 16);
+    assert.equal(schema.SCHEMA_VERSION, 17);
+    assert.equal(schema.db.verno, 17);
   });
 
   test('la tabla "syncQueue" existe y está vacía en una instalación fresca', async () => {
@@ -44,7 +44,7 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
 });
 
 describe('Actualización desde v1 (usuario con la app instalada desde el principio)', () => {
-  test('sube de v1 a v16 sin lanzar y preservando los datos ya guardados', async () => {
+  test('sube de v1 a v17 sin lanzar y preservando los datos ya guardados', async () => {
     // 1) Crea la base de datos tal cual era en v1, con datos reales de un
     // "usuario antiguo", SIN pasar por schema.js todavía.
     const oldDb = new Dexie(DB_NAME);
@@ -76,7 +76,7 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
     // ejecutando cada .upgrade() de por medio.
     const schema = await import(`../js/db/schema.js?upgrade1=${Date.now()}`);
     await schema.db.exercises.toArray();
-    assert.equal(schema.db.verno, 16);
+    assert.equal(schema.db.verno, 17);
 
     // 3) El ejercicio y el entrenamiento originales siguen ahí, intactos.
     const exercise = await schema.db.exercises.get('ex1');

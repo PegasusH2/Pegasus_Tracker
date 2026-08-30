@@ -517,7 +517,38 @@ db.version(16).stores({
     });
 });
 
-export const SCHEMA_VERSION = 16;
+// v17: módulo de Nutrición + relación entrenador-cliente (Pegasus Nutrition).
+// dietPlans/dietMeals/dietFoods/nutritionMacroTargets son el espejo local de
+// las tablas nuevas en supabase/migrations/002_nutrition_trainer_link.sql —
+// una fila con assignedToClientId no nulo es de solo lectura para este
+// usuario (ver repository.js#isReadOnlyForMe). userPreferences es la única
+// pieza de Ajustes que viaja con la cuenta (hoy: toggles de Nutrición en
+// Personalizar) — el resto de `settings` sigue siendo local por dispositivo.
+// trainer_links NO se espeja aquí a propósito: vincular cuentas exige estar
+// online, se consulta en vivo (ver js/core/trainer-link.js).
+db.version(17).stores({
+  exercises: 'id, name, muscleGroup, archived, isFavorite',
+  workouts: 'id, date, templateId',
+  workoutExercises: 'id, workoutId, exerciseId, [workoutId+order]',
+  sets: 'id, workoutExerciseId, setNumber',
+  bodyWeight: 'id, date',
+  measurementTypes: 'id, order',
+  measurements: 'id, typeId, [typeId+date]',
+  skinfoldSites: 'id, order',
+  skinfoldEntries: 'id, siteId, [siteId+date]',
+  settings: 'key',
+  templates: 'id, order',
+  templateExercises: 'id, templateId, [templateId+order]',
+  bars: 'id, order',
+  syncQueue: 'id, status, entity, entityId, [status+createdAt], [entity+entityId]',
+  dietPlans: 'id, effectiveDate',
+  dietMeals: 'id, dietPlanId, [dietPlanId+order]',
+  dietFoods: 'id, mealId, [mealId+order]',
+  nutritionMacroTargets: 'id, effectiveDate',
+  userPreferences: 'id, key',
+});
+
+export const SCHEMA_VERSION = 17;
 
 // Tablas cuyas filas se sincronizan con Supabase cuando hay sesión activa —
 // ver docs/supabase-sync-design.md para la decisión de alcance (exercises/
@@ -529,6 +560,7 @@ export const SYNCED_TABLES = [
   'exercises', 'workouts', 'workoutExercises', 'sets',
   'templates', 'templateExercises', 'bodyWeight',
   'measurementTypes', 'measurements', 'skinfoldSites', 'skinfoldEntries',
+  'dietPlans', 'dietMeals', 'dietFoods', 'nutritionMacroTargets', 'userPreferences',
 ];
 
 export function newId() {

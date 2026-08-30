@@ -31,6 +31,12 @@ const SECTION_LABELS = {
   plicometro: 'Plicómetro',
 };
 
+const NUTRICION_SECTION_LABELS = {
+  macros: 'Macros',
+  dieta: 'Dieta',
+  historico: 'Histórico',
+};
+
 export async function renderSettingsHub(mount) {
   render(mount);
 }
@@ -321,15 +327,24 @@ function openBarsSheet() {
 
 function openPersonalizarSheet() {
   const sections = settings.getProgressSections();
+  const nutricionSections = settings.getNutricionSections();
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:12px;">Secciones visibles</h3>
     <p class="type-caption text-faint" style="margin-bottom:var(--space-3);">
       Ocultar una sección no borra sus datos — puedes reactivarla cuando quieras.
     </p>
+    <div class="section-label">Progreso</div>
     ${Object.entries(SECTION_LABELS).map(([key, label]) => `
       <label class="checkbox-row">
         <span class="type-body">${label}</span>
         <input type="checkbox" data-section="${key}" ${sections[key] ? 'checked' : ''} />
+      </label>
+    `).join('')}
+    <div class="section-label" style="margin-top:var(--space-4);">Nutrición</div>
+    ${Object.entries(NUTRICION_SECTION_LABELS).map(([key, label]) => `
+      <label class="checkbox-row">
+        <span class="type-body">${label}</span>
+        <input type="checkbox" data-nutricion-section="${key}" ${nutricionSections[key] ? 'checked' : ''} />
       </label>
     `).join('')}
   `, {
@@ -337,6 +352,11 @@ function openPersonalizarSheet() {
       sheet.querySelectorAll('[data-section]').forEach((cb) => {
         cb.addEventListener('change', async (e) => {
           await settings.setProgressSection(e.target.dataset.section, e.target.checked);
+        });
+      });
+      sheet.querySelectorAll('[data-nutricion-section]').forEach((cb) => {
+        cb.addEventListener('change', async (e) => {
+          await settings.setNutricionSection(e.target.dataset.nutricionSection, e.target.checked);
         });
       });
     },

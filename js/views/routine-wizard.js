@@ -309,7 +309,9 @@ function renderReviewList(mount, state) {
       [state.selected[idx], state.selected[idx + 1]] = [state.selected[idx + 1], state.selected[idx]];
       renderReviewList(mount, state);
     });
-    row.querySelector('.rw-remove').addEventListener('click', () => {
+    row.querySelector('.rw-remove').addEventListener('click', async () => {
+      const ok = await openConfirmSheet(`¿Quitar "${state.selected[idx].exercise.name}" de esta rutina?`, { confirmLabel: 'Quitar' });
+      if (!ok) return;
       state.selected.splice(idx, 1);
       renderReviewList(mount, state);
     });

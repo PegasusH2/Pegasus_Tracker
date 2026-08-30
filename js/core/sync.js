@@ -23,8 +23,9 @@ export { isSupabaseConfigured };
 // su workout.
 const SYNC_ORDER = [
   'exercises', 'measurementTypes', 'skinfoldSites', 'templates', 'bodyWeight',
+  'nutritionMacroTargets', 'userPreferences', 'dietPlans',
   'workouts', 'templateExercises', 'workoutExercises', 'measurements',
-  'skinfoldEntries', 'sets',
+  'skinfoldEntries', 'sets', 'dietMeals', 'dietFoods',
 ];
 
 const TABLE_TO_SQL = {
@@ -39,6 +40,11 @@ const TABLE_TO_SQL = {
   measurements: 'measurements',
   skinfoldSites: 'skinfold_sites',
   skinfoldEntries: 'skinfold_entries',
+  dietPlans: 'diet_plans',
+  dietMeals: 'diet_meals',
+  dietFoods: 'diet_foods',
+  nutritionMacroTargets: 'nutrition_macro_targets',
+  userPreferences: 'user_preferences',
 };
 
 // Solo hace falta listar los campos que NO son "una palabra" (donde
@@ -74,6 +80,13 @@ const FIELD_MAPS = {
   measurements: { typeId: 'type_id', valueLeft: 'value_left', valueRight: 'value_right' },
   skinfoldSites: { order: 'sort_order' },
   skinfoldEntries: { siteId: 'site_id', valueMm: 'value_mm' },
+  dietPlans: { assignedToClientId: 'assigned_to_client_id', effectiveDate: 'effective_date' },
+  dietMeals: { dietPlanId: 'diet_plan_id', order: 'sort_order' },
+  dietFoods: { mealId: 'meal_id', order: 'sort_order', proteinG: 'protein_g', carbsG: 'carbs_g', fatG: 'fat_g' },
+  nutritionMacroTargets: {
+    assignedToClientId: 'assigned_to_client_id', effectiveDate: 'effective_date',
+    proteinG: 'protein_g', carbsG: 'carbs_g', fatG: 'fat_g',
+  },
 };
 
 function camelToSnake(s) {

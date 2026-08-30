@@ -567,6 +567,12 @@ function renderExerciseEditList(listEl, routine, onChange, onSplit) {
             <input type="number" inputmode="numeric" class="ex-rir" value="${it.rir ?? ''}" placeholder="—" />
           </div>
         </div>
+        <div class="row" style="gap:8px; margin-bottom:8px;">
+          <div class="field" style="margin-bottom:0; flex:1;">
+            <label class="label">Peso (kg)</label>
+            <input type="number" inputmode="decimal" class="ex-weight-hint" value="${it.weightHintKg ?? ''}" placeholder="—" />
+          </div>
+        </div>
       `}
 
       <div class="row" style="align-items:center;">
@@ -580,7 +586,9 @@ function renderExerciseEditList(listEl, routine, onChange, onSplit) {
     const tempId = card.dataset.tempId;
     const item = routine.items.find((i) => i.tempId === tempId);
 
-    card.querySelector('.ex-remove').addEventListener('click', () => {
+    card.querySelector('.ex-remove').addEventListener('click', async () => {
+      const ok = await openConfirmSheet(`¿Quitar "${item.recognizedName}" de esta rutina?`, { confirmLabel: 'Quitar' });
+      if (!ok) return;
       routine.items = routine.items.filter((i) => i.tempId !== tempId);
       onChange();
     });
@@ -588,6 +596,7 @@ function renderExerciseEditList(listEl, routine, onChange, onSplit) {
     card.querySelector('.ex-reps-min')?.addEventListener('blur', (e) => { item.repsMin = e.target.value === '' ? null : Number(e.target.value); });
     card.querySelector('.ex-reps-max')?.addEventListener('blur', (e) => { item.repsMax = e.target.value === '' ? null : Number(e.target.value); });
     card.querySelector('.ex-rir')?.addEventListener('blur', (e) => { item.rir = e.target.value === '' ? null : Number(e.target.value); });
+    card.querySelector('.ex-weight-hint')?.addEventListener('blur', (e) => { item.weightHintKg = e.target.value === '' ? null : Number(e.target.value); });
 
     card.querySelectorAll('.ex-seq-reps').forEach((input) => {
       input.addEventListener('blur', (e) => {
@@ -674,6 +683,20 @@ async function saveProgram(programState, btn) {
     return;
   }
 
+  // La confianza baja no bloquea el guardado (el usuario puede decidir que ya
+  // ha revisado y corregido lo necesario), pero exige una confirmación
+  // explícita en vez de dejar pasar en silencio una lectura insegura.
+  const lowConfidenceCount = programState.routines.reduce(
+    (sum, r) => sum + r.items.filter((i) => i.confidence === 'low').length, 0,
+  );
+  if (lowConfidenceCount > 0) {
+    const ok = await openConfirmSheet(
+      `Hay ${lowConfidenceCount} ejercicio${lowConfidenceCount === 1 ? '' : 's'} marcado${lowConfidenceCount === 1 ? '' : 's'} como "lectura poco segura". Revísalos antes de guardar si no lo has hecho ya.`,
+      { confirmLabel: 'Guardar de todos modos', cancelLabel: 'Revisar primero', danger: false },
+    );
+    if (!ok) return;
+  }
+
   if (btn) btn.disabled = true;
   try {
     let firstTemplateId = null;
@@ -690,6 +713,7 @@ async function saveProgram(programState, btn) {
           targetWeightSequence: item.weightSequence,
           targetRir: item.rir,
           targetRestSeconds: item.targetRestSeconds ?? null,
+          targetWeightKg: item.weightHintKg ?? null,
           notes: item.notes || '',
           defaultSetType: usesSpecialType ? item.setType : 'normal',
           defaultLastSetOnly: usesSpecialType && item.lastSetOnly,

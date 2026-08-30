@@ -69,13 +69,13 @@
 .set-group:last-child { border-bottom: none; }
 .set-row {
   display: grid;
-  grid-template-columns: 20px 1fr 1fr 1fr 26px 22px;
+  grid-template-columns: 20px 1fr 1fr 1fr 26px;
   align-items: center;
   gap: var(--space-2);
   padding: 12px 0;
 }
 /* kg y lb como columnas independientes necesitan algo más de sitio que reps/RIR */
-.set-row.set-row--dual-unit { grid-template-columns: 20px 1.7fr 1fr 1fr 26px 22px; gap: 6px; }
+.set-row.set-row--dual-unit { grid-template-columns: 20px 1.7fr 1fr 1fr 26px; gap: 6px; }
 .set-group .set-row { padding-bottom: 2px; }
 .set-total {
   text-align: right;
@@ -141,13 +141,38 @@
 .set-check--disabled { opacity: 0.4; }
 .set-check svg { width: 12px; height: 12px; }
 
-.set-remove {
-  color: var(--text-tertiary);
-  font-size: 15px;
-  width: 100%;
-  text-align: center;
-  padding: 4px 0;
+/* Eliminar una serie: deslizar horizontalmente revela la papelera detrás
+   (nunca un botón fijo) — ver attachSetSwipeHandlers en workout-session.js. */
+.set-swipe { position: relative; overflow: hidden; }
+.set-swipe-content {
+  position: relative;
+  background: var(--surface);
+  touch-action: pan-y;
+  transition: transform 0.2s ease;
 }
+.set-swipe-content.set-swipe--dragging { transition: none; }
+.set-swipe-delete {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--danger);
+}
+.set-swipe-delete-btn {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger-contrast);
+  background: transparent;
+  border: none;
+  padding: 0;
+  min-height: unset;
+}
+.set-swipe-delete-btn svg { width: 20px; height: 20px; }
 
 /* Tipo de serie — opción secundaria discreta, nunca botones grandes
    permanentes (Normal/Fallo/Rest-pause/Descendente se elige en un sheet). */
@@ -250,6 +275,31 @@
   margin-bottom: var(--space-3);
 }
 .exercise-card-header h3 { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+
+/* Deslizar el ejercicio hacia la izquierda revela el PR detrás — mismo
+   patrón que .set-swipe (workout-session.js#attachExercisePrSwipe), pero a
+   ancho completo en vez de un fleco fijo. */
+/* Grid con los dos paneles apilados en la misma celda — así el alto del
+   contenedor es siempre el MÁXIMO de los dos (última sesión vs. PR), nunca
+   el del panel visible en reposo; con position:absolute+inset:0 el panel
+   más alto se recortaba en vez de determinar el alto real. */
+.exercise-swipe { position: relative; overflow: hidden; display: grid; margin-bottom: var(--space-3); }
+.exercise-swipe-content,
+.exercise-swipe-pr { grid-area: 1 / 1 / 2 / 2; }
+.exercise-swipe-content {
+  background: var(--surface);
+  transition: transform 0.25s ease;
+  touch-action: pan-y;
+  z-index: 1;
+}
+.exercise-swipe-content.exercise-swipe--dragging { transition: none; }
+.exercise-swipe-pr {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.pr-trophy { display: inline-flex; color: var(--accent); }
+.pr-trophy svg { width: 19px; height: 19px; }
 
 /* Callout de progresión — arriba/al lado, comprensible de un vistazo */
 .progress-callout {

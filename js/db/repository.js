@@ -328,6 +328,7 @@ export async function addExerciseToWorkout(workoutId, exerciseId, targets = {}) 
     targetRestSeconds: targets.targetRestSeconds ?? null,
     targetRepsSequence: targets.targetRepsSequence ?? null,
     targetWeightSequence: targets.targetWeightSequence ?? null,
+    targetWeightKg: targets.targetWeightKg ?? null,
   };
   await db.workoutExercises.add(we);
   await enqueueCreate('workoutExercises', we);
@@ -487,6 +488,10 @@ export async function addTemplateExercise(templateId, exerciseId, values = {}) {
     // sobre targetRepsMin/Max al crear las series de una sesión nueva.
     targetRepsSequence: values.targetRepsSequence ?? null,
     targetWeightSequence: values.targetWeightSequence ?? null,
+    // Peso objetivo único (ej. "80kg" leído de una foto) cuando NO hay una
+    // progresión por serie — solo se usa como pista (placeholder) al empezar
+    // un entrenamiento, nunca se prellena como valor real (ver workout-session.js).
+    targetWeightKg: values.targetWeightKg ?? null,
     notes: values.notes ?? '',
     defaultSetType: values.defaultSetType ?? 'normal',
     defaultLastSetOnly: values.defaultLastSetOnly ?? false,
@@ -560,28 +565,27 @@ export async function startWorkoutFromTemplate(templateId, { date }) {
         targetRestSeconds: te.targetRestSeconds,
         targetRepsSequence: te.targetRepsSequence ?? null,
         targetWeightSequence: te.targetWeightSequence ?? null,
+        targetWeightKg: te.targetWeightKg ?? null,
       });
-      const lastEntry = await getLastSessionForExercise(te.exerciseId);
-      const lastSets = lastEntry?.sets ?? [];
       const setCount = Math.max(1, te.targetSets || 1);
-      const repsSequence = Array.isArray(te.targetRepsSequence) && te.targetRepsSequence.length ? te.targetRepsSequence : null;
-      const weightSequence = Array.isArray(te.targetWeightSequence) && te.targetWeightSequence.length ? te.targetWeightSequence : null;
-      // Rango uniforme (sin progresión por serie): el valor por defecto es el
-      // extremo INFERIOR, no el superior — ej. objetivo "8-12" -> se prellena 8.
-      const rangeDefaultReps = te.targetRepsMin ?? te.targetRepsMax ?? te.targetReps ?? null;
       const defaultSetType = te.defaultSetType ?? 'normal';
+      // Peso y reps SIEMPRE en blanco al empezar — nunca se heredan del
+      // entrenamiento anterior ni del objetivo de la rutina (eso solo se
+      // muestra como pista, ver workout-session.js). Así, marcar la serie
+      // como "realizada" automáticamente al rellenar peso+reps (ver
+      // deriveDoneOnCommit en workout-session.js) exige de verdad que el
+      // usuario los haya tecleado — si cualquiera de los dos viniera ya
+      // prellenado, se marcaría solo con escribir el otro.
       for (let i = 0; i < setCount; i++) {
         const isLastSet = i === setCount - 1;
         const usesSpecialType = defaultSetType !== 'normal' && (!te.defaultLastSetOnly || isLastSet);
-        const plannedReps = repsSequence ? (repsSequence[i] ?? repsSequence[repsSequence.length - 1]) : rangeDefaultReps;
-        const plannedWeight = weightSequence ? (weightSequence[i] ?? weightSequence[weightSequence.length - 1]) : null;
         await addSet(we.id, {
-          weight: lastSets[i]?.weight ?? plannedWeight,
-          weightKgPart: lastSets[i]?.weightKgPart ?? null,
-          weightLbPart: lastSets[i]?.weightLbPart ?? null,
-          barWeightKg: lastSets[i]?.barWeightKg ?? null,
-          plateWeightPerSideKg: lastSets[i]?.plateWeightPerSideKg ?? null,
-          reps: lastSets[i]?.reps ?? plannedReps,
+          weight: null,
+          weightKgPart: null,
+          weightLbPart: null,
+          barWeightKg: null,
+          plateWeightPerSideKg: null,
+          reps: null,
           type: usesSpecialType ? defaultSetType : 'normal',
           restPauseExtra: usesSpecialType && defaultSetType === 'restpause' ? te.defaultRestPauseExtra : null,
           dropSteps: usesSpecialType && defaultSetType === 'descendente' ? te.defaultDropSteps : null,
@@ -715,6 +719,14 @@ export async function listBodyWeight() {
 export async function getFirstBodyWeight() {
   const all = await db.bodyWeight.orderBy('date').toArray();
   return all[0] ?? null;
+}
+
+// Peso corporal vigente en una fecha concreta (ej. el día de un PR) — el
+// último registro EN o ANTES de esa fecha, nunca uno posterior: un PR antiguo
+// no debe mostrar el peso corporal actual/futuro del usuario. null si no hay
+// ningún registro tan antiguo (no se inventa un valor aproximado).
+export async function getBodyWeightNear(dateISO) {
+  return (await db.bodyWeight.where('date').belowOrEqual(dateISO).last()) ?? null;
 }
 
 // ---------- Medidas corporales ----------
@@ -881,6 +893,196 @@ export async function listSkinfoldEntriesByDate() {
   return byDate;
 }
 
+// ---------- Nutrición ----------
+// Mismo patrón dueño=entrenador/asignado=cliente que templates (ver
+// startWorkoutFromTemplate más arriba): una fila con assignedToClientId no
+// nulo viene de Pegasus Nutrition vía sync (ver
+// supabase/migrations/002_nutrition_trainer_link.sql) y es de SOLO LECTURA
+// para este dispositivo. El bloqueo real está en RLS — el `with check` del
+// servidor rechaza cualquier escritura aunque se salte esta comprobación;
+// esto solo evita mostrar controles de edición que fallarían igualmente.
+export function isReadOnlyForMe(row) {
+  return row?.assignedToClientId != null;
+}
+
+// dayType ('training'|'rest') filtra sobre el array ya cargado — bajo
+// volumen esperado por usuario, no hace falta un índice Dexie compuesto.
+// Las filas sin dayType (creadas antes de que existiera este campo) cuentan
+// como 'training', nunca desaparecen.
+export async function listMacroTargets(dayType) {
+  const all = (await db.nutritionMacroTargets.orderBy('effectiveDate').toArray()).reverse();
+  return dayType ? all.filter((t) => (t.dayType ?? 'training') === dayType) : all;
+}
+
+export async function getCurrentMacroTarget(dayType) {
+  const all = await listMacroTargets(dayType);
+  return all[0] ?? null;
+}
+
+export async function addMacroTarget({ effectiveDate, dayType = 'training', calories, proteinG, carbsG, fatG, notes = '' }) {
+  const entry = {
+    id: newId(),
+    dayType,
+    effectiveDate: requireValidDate(effectiveDate, 'La fecha'),
+    calories: cleanNonNegativeNumber(calories),
+    proteinG: cleanNonNegativeNumber(proteinG),
+    carbsG: cleanNonNegativeNumber(carbsG),
+    fatG: cleanNonNegativeNumber(fatG),
+    notes,
+  };
+  await db.nutritionMacroTargets.add(entry);
+  await enqueueCreate('nutritionMacroTargets', entry);
+  return entry;
+}
+
+export async function deleteMacroTarget(id) {
+  const row = await db.nutritionMacroTargets.get(id);
+  if (row && isReadOnlyForMe(row)) throw new Error('No puedes eliminar un objetivo de tu entrenador.');
+  await db.nutritionMacroTargets.delete(id);
+  await enqueueDelete('nutritionMacroTargets', id);
+}
+
+// ---------- Dietas ----------
+
+export async function listDietPlans(dayType) {
+  const all = (await db.dietPlans.orderBy('effectiveDate').toArray()).reverse();
+  return dayType ? all.filter((p) => (p.dayType ?? 'training') === dayType) : all;
+}
+
+export async function getCurrentDietPlan(dayType) {
+  const all = await listDietPlans(dayType);
+  return all[0] ?? null;
+}
+
+export async function getDietPlan(id) {
+  return db.dietPlans.get(id);
+}
+
+export async function createDietPlan({ name, description = '', effectiveDate, dayType = 'training' }) {
+  const plan = {
+    id: newId(),
+    dayType,
+    name: requireNonEmptyString(name, 'El nombre'),
+    description,
+    effectiveDate: requireValidDate(effectiveDate, 'La fecha'),
+  };
+  await db.dietPlans.add(plan);
+  await enqueueCreate('dietPlans', plan);
+  return plan;
+}
+
+export async function updateDietPlan(id, changes) {
+  const row = await db.dietPlans.get(id);
+  if (row && isReadOnlyForMe(row)) throw new Error('Esta dieta la gestiona tu entrenador.');
+  await db.dietPlans.update(id, changes);
+  await enqueueUpdate('dietPlans', id);
+}
+
+export async function deleteDietPlan(id) {
+  const row = await db.dietPlans.get(id);
+  if (row && isReadOnlyForMe(row)) throw new Error('Esta dieta la gestiona tu entrenador.');
+  const meals = await db.dietMeals.where('dietPlanId').equals(id).toArray();
+  for (const meal of meals) await deleteDietMeal(meal.id);
+  await db.dietPlans.delete(id);
+  await enqueueDelete('dietPlans', id);
+}
+
+export async function listDietMeals(dietPlanId) {
+  return db.dietMeals.where('dietPlanId').equals(dietPlanId).sortBy('order');
+}
+
+export async function addDietMeal(dietPlanId, { name } = {}) {
+  const plan = await db.dietPlans.get(dietPlanId);
+  if (plan && isReadOnlyForMe(plan)) throw new Error('Esta dieta la gestiona tu entrenador.');
+  const existing = await db.dietMeals.where('dietPlanId').equals(dietPlanId).toArray();
+  const meal = {
+    id: newId(),
+    dietPlanId,
+    name: requireNonEmptyString(name, 'El nombre'),
+    order: existing.length,
+  };
+  await db.dietMeals.add(meal);
+  await enqueueCreate('dietMeals', meal);
+  return meal;
+}
+
+export async function updateDietMeal(id, changes) {
+  await db.dietMeals.update(id, changes);
+  await enqueueUpdate('dietMeals', id);
+}
+
+export async function deleteDietMeal(id) {
+  const foods = await db.dietFoods.where('mealId').equals(id).toArray();
+  for (const food of foods) {
+    await db.dietFoods.delete(food.id);
+    await enqueueDelete('dietFoods', food.id);
+  }
+  await db.dietMeals.delete(id);
+  await enqueueDelete('dietMeals', id);
+}
+
+export async function listDietFoods(mealId) {
+  return db.dietFoods.where('mealId').equals(mealId).sortBy('order');
+}
+
+export async function addDietFood(mealId, values = {}) {
+  const existing = await db.dietFoods.where('mealId').equals(mealId).toArray();
+  const food = {
+    id: newId(),
+    mealId,
+    name: requireNonEmptyString(values.name, 'El nombre'),
+    quantity: cleanNonNegativeNumber(values.quantity),
+    unit: values.unit || 'g',
+    calories: cleanNonNegativeNumber(values.calories),
+    proteinG: cleanNonNegativeNumber(values.proteinG),
+    carbsG: cleanNonNegativeNumber(values.carbsG),
+    fatG: cleanNonNegativeNumber(values.fatG),
+    notes: values.notes || '',
+    order: existing.length,
+  };
+  await db.dietFoods.add(food);
+  await enqueueCreate('dietFoods', food);
+  return food;
+}
+
+export async function updateDietFood(id, changes) {
+  await db.dietFoods.update(id, changes);
+  await enqueueUpdate('dietFoods', id);
+}
+
+export async function deleteDietFood(id) {
+  await db.dietFoods.delete(id);
+  await enqueueDelete('dietFoods', id);
+}
+
+// ---------- Preferencias sincronizadas ----------
+// A diferencia de `settings` (local por dispositivo, ver getSetting/
+// setSetting más abajo), estas filas viajan con la cuenta — hoy solo se usa
+// para los toggles de Nutrición en Personalizar (ver core/settings.js).
+// No-op transparente en modo local: enqueueCreate/enqueueUpdate ya
+// comprueban syncActive, y sin sesión esto simplemente no sube a ningún sitio.
+export async function getUserPreference(key, fallback = null) {
+  const row = await db.userPreferences.where('key').equals(key).first();
+  return row ? row.value : fallback;
+}
+
+// Como toda tabla sincronizable, la clave primaria de Dexie es `id` (uuid) —
+// `key` es solo un índice secundario para buscar por nombre. Mantenerlo así
+// (en vez de usar `key` como PK, como hace la tabla puramente local
+// `settings`) es necesario para que sync.js pueda tratarla exactamente igual
+// que las demás (remoteRow.id/local.id, ver applyRemoteRow).
+export async function setUserPreference(key, value) {
+  const existing = await db.userPreferences.where('key').equals(key).first();
+  if (existing) {
+    await db.userPreferences.update(existing.id, { value });
+    await enqueueUpdate('userPreferences', existing.id);
+  } else {
+    const row = { id: newId(), key, value };
+    await db.userPreferences.add(row);
+    await enqueueCreate('userPreferences', row);
+  }
+}
+
 // ---------- Configuración ----------
 
 export async function getSetting(key, fallback = null) {
@@ -899,6 +1101,7 @@ const TABLES = [
   'bodyWeight', 'measurementTypes', 'measurements',
   'skinfoldSites', 'skinfoldEntries', 'settings',
   'templates', 'templateExercises', 'bars',
+  'dietPlans', 'dietMeals', 'dietFoods', 'nutritionMacroTargets', 'userPreferences',
 ];
 
 export async function exportAllData() {

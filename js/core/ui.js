@@ -61,6 +61,7 @@ export const NAV_ICONS = {
   entreno: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.2" y="9.3" width="2.8" height="5.4" rx="1.2"/><rect x="6.4" y="7.2" width="3" height="9.6" rx="1.3"/><path d="M10.4 12h3.2"/><rect x="14.6" y="7.2" width="3" height="9.6" rx="1.3"/><rect x="19" y="9.3" width="2.8" height="5.4" rx="1.2"/></svg>`,
   progreso: `<svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 19v-2.6M8.6 19v-4.4M13 19v-2" stroke="currentColor" stroke-width="1.6" opacity="0.45"/><path d="M3 14.8l4.6-4.6 3.4 2.9L17 6.5" stroke="currentColor" stroke-width="2"/><path d="M13.2 6.1h4.1v4.1" stroke="var(--accent)" stroke-width="2"/></svg>`,
   settings: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="5.6"/><rect x="10.8" y="3.6" width="2.4" height="2.6" rx="0.7" fill="currentColor" stroke="none"/><rect x="10.8" y="3.6" width="2.4" height="2.6" rx="0.7" fill="currentColor" stroke="none" transform="rotate(45 12 12)"/><rect x="10.8" y="3.6" width="2.4" height="2.6" rx="0.7" fill="currentColor" stroke="none" transform="rotate(90 12 12)"/><rect x="10.8" y="3.6" width="2.4" height="2.6" rx="0.7" fill="currentColor" stroke="none" transform="rotate(135 12 12)"/><rect x="10.8" y="3.6" width="2.4" height="2.6" rx="0.7" fill="currentColor" stroke="none" transform="rotate(180 12 12)"/><rect x="10.8" y="3.6" width="2.4" height="2.6" rx="0.7" fill="currentColor" stroke="none" transform="rotate(225 12 12)"/><rect x="10.8" y="3.6" width="2.4" height="2.6" rx="0.7" fill="currentColor" stroke="none" transform="rotate(270 12 12)"/><rect x="10.8" y="3.6" width="2.4" height="2.6" rx="0.7" fill="currentColor" stroke="none" transform="rotate(315 12 12)"/><circle cx="12" cy="12" r="2.1" fill="var(--accent)" stroke="none"/></svg>`,
+  nutricion: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="8.3"/><circle cx="12" cy="12" r="3.1"/></svg>`,
 };
 
 // Iconos de la pantalla Entreno (accesos rápidos, cabeceras de sección) — misma
@@ -82,6 +83,10 @@ export const ACTION_ICONS = {
 };
 
 export const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>`;
+
+export const TRASH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4.8a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1V7"/><path d="M6 7l1 12.2a2 2 0 0 0 2 1.8h6a2 2 0 0 0 2-1.8L18 7"/><path d="M10 11v6M14 11v6"/></svg>`;
+
+export const TROPHY_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10v3.4a5 5 0 0 1-5 5 5 5 0 0 1-5-5V4z"/><path d="M7 5H4.5A1.5 1.5 0 0 0 3 6.5 3.5 3.5 0 0 0 6.5 10H7"/><path d="M17 5h2.5A1.5 1.5 0 0 1 21 6.5 3.5 3.5 0 0 1 17.5 10H17"/><path d="M12 12.4V16"/><path d="M8.5 19.5h7"/><path d="M9.5 16h5l.6 3.5h-6.2z"/></svg>`;
 
 export const AVATAR_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/></svg>`;
 

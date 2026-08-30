@@ -15,6 +15,10 @@ import { renderAiAnalysis } from './views/ai-analysis.js';
 import { renderSettingsBackup } from './views/settings-backup.js';
 import { renderSettingsHub } from './views/settings-hub.js';
 import { renderSettingsAccount } from './views/settings-account.js';
+import { renderNutritionMacros } from './views/nutrition-macros.js';
+import { renderNutritionDiet } from './views/nutrition-diet.js';
+import { renderNutritionHistory } from './views/nutrition-history.js';
+import { renderNutritionConfig } from './views/nutrition-config.js';
 import { hasExistingUserData, runOnboarding } from './views/onboarding.js';
 import { NAV_ICONS } from './core/ui.js';
 import { on, toast } from './core/store.js';
@@ -23,56 +27,20 @@ import { initSync } from './core/sync.js';
 import { initAuthListener } from './core/auth.js';
 import { initTheme, applyTheme } from './core/theme.js';
 
-// Splash de arranque (ver index.html/#app-splash) — se queda visible un
-// mínimo de 2s desde que este módulo empieza a ejecutarse, aunque el resto
-// del arranque (settings, tema, comprobación de onboarding) termine antes.
-const APP_BOOT_STARTED_AT = Date.now();
-const MIN_SPLASH_MS = 2000;
-// El trazo único de la firma "4 the Queens" (ver index.html + css/layout.css)
-// tiene que terminar de recorrer el texto ANTES de que el splash empiece a
-// desvanecerse — si no, se corta a medias. animation-delay 0.4s + 1.3s de
-// animación = 1.7s. Estos dos números viven aquí, sueltos, porque son
-// producto de las constantes usadas al generar el SVG (no algo que se pueda
-// leer del DOM antes de que la animación empiece) — si alguna vez se retocan
-// esos tiempos, hay que actualizar esto también.
-const QUEENS_SIGNATURE_END_MS = 1700;
-// 400ms de colchón de seguridad + 500ms extra a propósito, para poder leer
-// la firma ya completa un momento antes de que el splash se desvanezca.
-const QUEENS_SIGNATURE_MARGIN_MS = 900;
-
-function hideSplash() {
-  const splash = document.getElementById('app-splash');
-  if (!splash) return;
-  splash.classList.add('app-splash--hide');
-  splash.addEventListener('transitionend', () => splash.remove(), { once: true });
-}
-
-function waitForMinSplashDuration() {
-  const minMs = settings.getTheme() === 'queens'
-    ? Math.max(MIN_SPLASH_MS, QUEENS_SIGNATURE_END_MS + QUEENS_SIGNATURE_MARGIN_MS)
-    : MIN_SPLASH_MS;
-  const elapsed = Date.now() - APP_BOOT_STARTED_AT;
-  if (elapsed >= minMs) return Promise.resolve();
-  return new Promise((resolve) => setTimeout(resolve, minMs - elapsed));
-}
-
-// Retira el splash Y revela #app (fundido + leve deslizamiento, ver
-// css/layout.css) en el mismo instante — para que el contenido "aparezca"
-// justo cuando el splash se desvanece, no antes ni después.
-function revealApp() {
-  hideSplash();
-  document.getElementById('app')?.classList.add('app-ready');
-}
-
 const ALL_TABS = [
   { key: 'home', label: 'Inicio', icon: NAV_ICONS.home, path: '/home' },
   { key: 'entreno', label: 'Entreno', icon: NAV_ICONS.entreno, path: '/entreno' },
   { key: 'progreso', label: 'Progreso', icon: NAV_ICONS.progreso, path: '/progreso' },
+  { key: 'nutricion', label: 'Nutrición', icon: NAV_ICONS.nutricion, path: '/nutricion' },
   { key: 'ajustes', label: 'Ajustes', icon: NAV_ICONS.settings, path: '/ajustes' },
 ];
 
 function visibleTabs() {
-  return ALL_TABS.filter((t) => t.key !== 'progreso' || settings.isAnyProgressSectionEnabled());
+  return ALL_TABS.filter((t) => {
+    if (t.key === 'progreso') return settings.isAnyProgressSectionEnabled();
+    if (t.key === 'nutricion') return settings.isAnyNutricionSectionEnabled();
+    return true;
+  });
 }
 
 const ENTRENO_SUBTABS = [
@@ -90,6 +58,26 @@ const PROGRESO_SUBTABS = [
 function visibleProgresoSubtabs() {
   const sections = settings.getProgressSections();
   return PROGRESO_SUBTABS.filter((s) => sections[s.sectionKey]);
+}
+
+const NUTRICION_SUBTABS = [
+  { key: 'macros', label: 'Macros', path: '/nutricion', sectionKey: 'macros' },
+  { key: 'dieta', label: 'Dieta', path: '/nutricion/dieta', sectionKey: 'dieta' },
+  { key: 'historico', label: 'Histórico', path: '/nutricion/historico', sectionKey: 'historico' },
+];
+
+// nutricionSections controla qué pestañas se VEN (Personalizar); nutricionMode
+// controla qué sistema(s) tienen contenido real configurado — ninguno de los
+// dos sustituye al otro (ver plan de Nutrición). Histórico solo depende de
+// Personalizar: es útil sea cual sea el modo.
+function visibleNutricionSubtabs() {
+  const sections = settings.getNutricionSections();
+  const mode = settings.getNutricionMode();
+  return NUTRICION_SUBTABS.filter((s) => {
+    if (s.key === 'macros') return sections.macros && (mode === 'macros' || mode === 'ambos');
+    if (s.key === 'dieta') return sections.dieta && (mode === 'dieta' || mode === 'ambos');
+    return sections[s.sectionKey];
+  });
 }
 
 function parseHash() {
@@ -128,6 +116,22 @@ function matchRoute(segments) {
     if (sub === 'medidas' && sections.medidas) return { view: renderMeasurements, tab: 'progreso', subtab: 'medidas' };
     if (sub === 'plicometro' && sections.plicometro) return { view: renderSkinfold, tab: 'progreso', subtab: 'plicometro' };
     if (sub === 'ia') return { view: renderAiAnalysis, tab: 'progreso', subtab: null };
+  }
+
+  if (root === 'nutricion') {
+    const sections = settings.getNutricionSections();
+    const mode = settings.getNutricionMode();
+    const macrosOn = sections.macros && (mode === 'macros' || mode === 'ambos');
+    const dietaOn = sections.dieta && (mode === 'dieta' || mode === 'ambos');
+    if (sub === 'configurar') return { view: renderNutritionConfig, tab: 'nutricion', subtab: null, focusMode: true };
+    if (!sub) {
+      if (macrosOn) return { view: renderNutritionMacros, tab: 'nutricion', subtab: 'macros' };
+      if (dietaOn) return { view: renderNutritionDiet, tab: 'nutricion', subtab: 'dieta' };
+      if (sections.historico) return { view: renderNutritionHistory, tab: 'nutricion', subtab: 'historico' };
+      return { view: renderHome, tab: 'home' };
+    }
+    if (sub === 'dieta' && dietaOn) return { view: renderNutritionDiet, tab: 'nutricion', subtab: 'dieta' };
+    if (sub === 'historico' && sections.historico) return { view: renderNutritionHistory, tab: 'nutricion', subtab: 'historico' };
   }
 
   if (root === 'ajustes') {
@@ -196,6 +200,8 @@ on('auth:recovery', () => navigate('/ajustes/cuenta'));
 
 on('prefs:changed', ({ key }) => {
   if (key === 'progressSections') renderBottomNav(currentTab);
+  if (key === 'nutricionSections') renderBottomNav(currentTab);
+  if (key === 'nutricionMode') { renderBottomNav(currentTab); renderRoute(); }
   if (key === 'theme') applyTheme(settings.getTheme());
 });
 
@@ -231,6 +237,10 @@ async function renderRoute() {
     const subtabs = visibleProgresoSubtabs();
     if (subtabs.length > 1) renderSubtabs(view, subtabs, match.subtab);
   }
+  if (match.tab === 'nutricion' && match.subtab) {
+    const subtabs = visibleNutricionSubtabs();
+    if (subtabs.length > 1) renderSubtabs(view, subtabs, match.subtab);
+  }
 
   const mount = document.createElement('div');
   mount.className = 'view-enter';
@@ -245,9 +255,6 @@ async function renderRoute() {
 }
 
 // Monta la barra/vista normal y registra los listeners de navegación.
-// Devuelve la promesa de renderRoute() (la propia vista terminada de pintar)
-// para poder esperarla cuando interesa (ver más abajo: revelar #app justo
-// con el contenido ya listo, no antes).
 function bootShell() {
   renderShell();
   // El listener se registra DESPUÉS de renderShell() para que #view/#bottom-nav
@@ -283,20 +290,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Caso normal (ya hay cuenta/datos): se pinta la vista ANTES de revelar
-  // #app, para que el fundido de entrada muestre datos ya listos, nunca una
-  // pantalla vacía a medio cargar. El onboarding es al revés (no hay nada
-  // que precargar) — se revela primero y su propia pantalla de bienvenida
-  // aparece después, como siempre.
-  if (!needsOnboarding) await bootShell();
-
-  await waitForMinSplashDuration();
-  revealApp();
-
-  if (needsOnboarding) {
-    await runOnboarding();
-    bootShell();
-  }
+  if (needsOnboarding) await runOnboarding();
+  await bootShell();
 
   // No se espera (fire-and-forget): si no hay Supabase configurado o no hay
   // sesión, no hace nada; si la hay, sincroniza en segundo plano sin retrasar

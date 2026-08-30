@@ -99,6 +99,12 @@ function attachPressHandlers(container, byDate) {
   const grid = container.querySelector('#cal-grid');
   let timer = null;
   let longPressFired = false;
+  // Se pone a true en cuanto el dedo se mueve más de CANCEL_PX desde el
+  // pointerdown — antes solo cancelaba el long-press, pero no dejaba
+  // constancia del arrastre para endPress, así que un scroll/deslizamiento
+  // que empezaba sobre un día se interpretaba igualmente como un tap sobre
+  // ese día al soltar.
+  let movedTooFar = false;
   let startX = 0, startY = 0;
 
   grid.addEventListener('pointerdown', (e) => {
@@ -107,6 +113,7 @@ function attachPressHandlers(container, byDate) {
     startX = e.clientX;
     startY = e.clientY;
     longPressFired = false;
+    movedTooFar = false;
     const date = cell.dataset.date;
     timer = setTimeout(() => {
       longPressFired = true;
@@ -116,16 +123,17 @@ function attachPressHandlers(container, byDate) {
   });
 
   grid.addEventListener('pointermove', (e) => {
-    if (!timer) return;
+    if (movedTooFar) return;
     if (Math.abs(e.clientX - startX) > CANCEL_PX || Math.abs(e.clientY - startY) > CANCEL_PX) {
-      clearTimeout(timer);
-      timer = null;
+      movedTooFar = true;
+      if (timer) { clearTimeout(timer); timer = null; }
     }
   });
 
   const endPress = (e) => {
     if (timer) { clearTimeout(timer); timer = null; }
     if (longPressFired) { longPressFired = false; return; }
+    if (movedTooFar) { movedTooFar = false; return; } // fue un scroll/arrastre, no un tap
     const cell = e.target.closest?.('.cal-day[data-date]');
     if (!cell) return;
     const workouts = byDate[cell.dataset.date] || [];

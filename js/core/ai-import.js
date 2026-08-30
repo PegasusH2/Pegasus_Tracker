@@ -103,7 +103,13 @@ function parseRirRaw(raw) {
 // Núcleo de campos de "forma de la serie", compartido entre un ejercicio
 // plano y cada entrada de weekValues[] (misma limpieza en ambos casos).
 function cleanExerciseCore(e) {
-  const sets = Math.min(MAX_SETS_PER_EXERCISE, Math.max(1, cleanInt(e?.sets) ?? 1));
+  const setsRaw = cleanInt(e?.sets);
+  const sets = Math.min(MAX_SETS_PER_EXERCISE, Math.max(1, setsRaw ?? 1));
+  // Si la IA no pudo leer el número de series, "1" es una cifra fabricada
+  // por nosotros (no un dato real) — se marca como señal de incertidumbre
+  // para que validateExercises lo refleje en confidence, en vez de colarse
+  // como si fuera una lectura segura.
+  const setsWasMissing = setsRaw == null;
   const repsMinRaw = cleanInt(e?.repsMin);
   const repsMin = repsMinRaw != null && repsMinRaw >= 0 ? repsMinRaw : null;
   const repsMaxRaw = cleanInt(e?.repsMax);
@@ -128,7 +134,7 @@ function cleanExerciseCore(e) {
     : null;
   const weightHintRaw = cleanNum(e?.weightHintKg);
   return {
-    sets, repsMin, repsMax, repsSequence, weightSequence, setType,
+    sets, setsWasMissing, repsMin, repsMax, repsSequence, weightSequence, setType,
     lastSetOnly: e?.lastSetOnly === true,
     extraReps: extraReps?.length ? extraReps : null,
     steps: steps?.length ? steps : null,
@@ -190,7 +196,7 @@ function validateExercises(exercisesRaw) {
       : null;
 
     const rawText = cleanStr(source?.rawText);
-    const hasUncertainSignal = !!rawText || !!fallbackNote || (source?.confidence === 'low');
+    const hasUncertainSignal = !!rawText || !!fallbackNote || (source?.confidence === 'low') || core.setsWasMissing;
 
     return {
       recognizedName: cleanStr(e?.recognizedName) ?? 'Ejercicio sin nombre',
@@ -239,7 +245,7 @@ export function validateImportedProgram(raw) {
 
 // Redimensiona en el cliente antes de subir — más rápido, más barato, y bien
 // dentro de los límites de payload de Gemini/Workers. Sin librerías (Canvas).
-export function resizeImageForUpload(file, { maxSide = 1600, quality = 0.85 } = {}) {
+export function resizeImageForUpload(file, { maxSide = 2200, quality = 0.85 } = {}) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('READ_FAILED'));
