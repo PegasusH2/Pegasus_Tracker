@@ -517,15 +517,14 @@ db.version(16).stores({
     });
 });
 
-// v17: módulo de Nutrición + relación entrenador-cliente (Pegasus Nutrition).
-// dietPlans/dietMeals/dietFoods/nutritionMacroTargets son el espejo local de
-// las tablas nuevas en supabase/migrations/002_nutrition_trainer_link.sql —
-// una fila con assignedToClientId no nulo es de solo lectura para este
-// usuario (ver repository.js#isReadOnlyForMe). userPreferences es la única
-// pieza de Ajustes que viaja con la cuenta (hoy: toggles de Nutrición en
-// Personalizar) — el resto de `settings` sigue siendo local por dispositivo.
-// trainer_links NO se espeja aquí a propósito: vincular cuentas exige estar
-// online, se consulta en vivo (ver js/core/trainer-link.js).
+// v17: módulo de Nutrición. dietPlans/dietMeals/dietFoods/nutritionMacroTargets
+// son 100% locales (Dexie) — Pegasus Nutrition ya tiene su propio backend real
+// en Supabase (nutrition_macro_plan, trainer_client_links, etc., ver
+// supabase/schema.sql del proyecto de Nutrition), así que estas tablas de
+// Tracker NUNCA se sincronizan, para no duplicar/chocar con ese sistema (ver
+// SYNCED_TABLES más abajo). userPreferences es la única pieza de Ajustes que
+// viaja con la cuenta (hoy: toggles de Nutrición en Personalizar) — el resto
+// de `settings` sigue siendo local por dispositivo.
 db.version(17).stores({
   exercises: 'id, name, muscleGroup, archived, isFavorite',
   workouts: 'id, date, templateId',
@@ -560,7 +559,7 @@ export const SYNCED_TABLES = [
   'exercises', 'workouts', 'workoutExercises', 'sets',
   'templates', 'templateExercises', 'bodyWeight',
   'measurementTypes', 'measurements', 'skinfoldSites', 'skinfoldEntries',
-  'dietPlans', 'dietMeals', 'dietFoods', 'nutritionMacroTargets', 'userPreferences',
+  'userPreferences',
 ];
 
 export function newId() {
