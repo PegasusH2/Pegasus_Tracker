@@ -28,6 +28,22 @@ const VALID_THEMES = ['default', 'white', 'queens'];
 let cache = { ...DEFAULTS };
 let loaded = false;
 
+// Caché EN MEMORIA (nunca persistida aquí — vive en profiles.tipoDieta, en
+// el backend real de Pegasus Nutrition) del tipo de nutrición vigente y de
+// si hay un entrenador vinculado gestionándolo. Sirve para que js/app.js
+// pueda decidir de forma síncrona qué subtab de Nutrición mostrar (Macros o
+// Dieta cerrada, nunca las dos) sin bloquear el shell; el valor se
+// actualiza cada vez que una vista de Nutrición hace su propio fetch real
+// contra Supabase (ver js/core/pegasus-nutrition.js).
+let nutricionTipoCache = { tipoDieta: 'macros', dietaCerradaDistingueDias: false, tieneEntrenador: false };
+
+export function getNutricionTipoCache() { return nutricionTipoCache; }
+export function setNutricionTipoCache(next) {
+  const changed = next.tipoDieta !== nutricionTipoCache.tipoDieta;
+  nutricionTipoCache = { ...nutricionTipoCache, ...next };
+  if (changed) emit('prefs:changed', { key: 'nutricionTipo' });
+}
+
 function clampUnits(state) {
   const enabled = (state.weightUnitsEnabled.kg || state.weightUnitsEnabled.lb)
     ? state.weightUnitsEnabled

@@ -5,12 +5,13 @@
 // semana). Requiere sesión iniciada — sin cuenta no hay forma de saber de
 // quién son los datos.
 import * as pegasus from '../core/pegasus-nutrition.js';
+import * as settings from '../core/settings.js';
 import { getUser } from '../core/auth.js';
 import { formatDate, todayISO } from '../core/format.js';
 import { openSheet, openConfirmSheet } from '../core/ui.js';
 import { toast } from '../core/store.js';
 import { escapeHtml } from '../core/escape.js';
-import { navigate } from '../app.js';
+import { navigate, refreshRoute } from '../app.js';
 
 function kcal(proteinG, carbsG, fatG) {
   if (proteinG == null && carbsG == null && fatG == null) return null;
@@ -60,6 +61,19 @@ async function paint(mount) {
       <button class="btn btn-primary btn-block" id="m-login" style="margin-top:var(--space-4);">Ir a Ajustes › Cuenta</button>
     `;
     mount.querySelector('#m-login').addEventListener('click', () => navigate('/ajustes/cuenta'));
+    return;
+  }
+
+  const tipoInfo = await pegasus.pegasusGetTipoDieta();
+  settings.setNutricionTipoCache({
+    tipoDieta: tipoInfo?.tipoDieta ?? 'macros',
+    dietaCerradaDistingueDias: tipoInfo?.dietaCerradaDistingueDias ?? false,
+  });
+  // La caché síncrona que decidió mostrar esta vista (ver js/app.js) estaba
+  // desactualizada: el tipo real ya no es Macros — corrige sin esperar a la
+  // siguiente navegación manual.
+  if (tipoInfo?.tipoDieta === 'cerrada') {
+    refreshRoute();
     return;
   }
 

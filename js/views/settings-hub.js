@@ -1,11 +1,12 @@
 import * as settings from '../core/settings.js';
 import * as repo from '../db/repository.js';
+import * as pegasus from '../core/pegasus-nutrition.js';
 import { openSheet, openConfirmSheet } from '../core/ui.js';
 import { escapeHtml } from '../core/escape.js';
 import { toast, on } from '../core/store.js';
 import { navigate } from '../app.js';
 import { adminLogin } from '../core/ai-import.js';
-import { isSupabaseConfigured } from '../core/auth.js';
+import { isSupabaseConfigured, getUser } from '../core/auth.js';
 import { getSyncStatus } from '../core/sync.js';
 import { THEMES } from '../core/theme.js';
 
@@ -31,8 +32,12 @@ const SECTION_LABELS = {
   plicometro: 'Plicómetro',
 };
 
+// La clave sigue llamándose 'macros' por continuidad de la preferencia ya
+// guardada (repo.setUserPreference), aunque ahora también gobierna la
+// visibilidad del subtab "Dieta" cuando tipoDieta = 'cerrada' — los dos
+// nunca están activos a la vez, así que es un único interruptor real.
 const NUTRICION_SECTION_LABELS = {
-  macros: 'Macros',
+  macros: 'Nutrición (Macros / Dieta)',
   historico: 'Histórico',
 };
 
@@ -71,6 +76,12 @@ function render(mount) {
         <span class="text-faint">›</span>
       </div>
       ${isSupabaseConfigured() ? `
+        <div class="grouped-row" id="row-nutricion-tipo" style="cursor:pointer;">
+          <span class="type-body" style="font-weight:600;">Nutrición</span>
+          <span class="text-faint">›</span>
+        </div>
+      ` : ''}
+      ${isSupabaseConfigured() ? `
         <div class="grouped-row" id="row-cuenta" style="cursor:pointer;">
           <span class="type-body" style="font-weight:600;">Cuenta y sincronización</span>
           <span class="text-faint">${syncSubtitle()} ›</span>
@@ -95,6 +106,7 @@ function render(mount) {
   mount.querySelector('#row-personalizar').addEventListener('click', () => openPersonalizarSheet());
   mount.querySelector('#row-tema').addEventListener('click', () => openTemaSheet(mount));
   mount.querySelector('#row-datos').addEventListener('click', () => navigate('/ajustes/datos'));
+  mount.querySelector('#row-nutricion-tipo')?.addEventListener('click', () => openNutricionTipoSheet(mount));
   mount.querySelector('#row-cuenta')?.addEventListener('click', () => navigate('/ajustes/cuenta'));
   mount.querySelector('#row-dev')?.addEventListener('click', () => openDevModeSheet(mount));
 }
@@ -396,5 +408,122 @@ function openTemaSheet(mount) {
       });
     },
     onClose: () => render(mount),
+  });
+}
+
+const TIPO_NUTRICION_LABELS = { macros: 'Macros', cerrada: 'Dieta cerrada' };
+
+// Modelo mutuamente excluyente: profiles.tipoDieta en el backend real de
+// Pegasus Nutrition (ver js/core/pegasus-nutrition.js) decide si esta cuenta
+// usa Macros o Dieta cerrada. Si hay un entrenador vinculado (accepted) es
+// él quien lo gestiona — RLS lo impide del lado del servidor, pero aquí
+// además se bloquea la UI proactivamente en vez de esperar al error.
+function openNutricionTipoSheet(mount) {
+  openSheet('<div id="nt-content"><p class="type-caption text-faint">Cargando…</p></div>', {
+    onMount: async (sheet, close) => {
+      const box = sheet.querySelector('#nt-content');
+      const user = await getUser();
+      if (!user) {
+        box.innerHTML = `
+          <h3 class="type-headline" style="margin-bottom:10px;">Tipo de nutrición</h3>
+          <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para gestionar tu tipo de nutrición.</div>
+          <button class="btn btn-primary btn-block" id="nt-login" style="margin-top:var(--space-4);">Ir a Cuenta y sincronización</button>
+        `;
+        box.querySelector('#nt-login').addEventListener('click', () => { close(); navigate('/ajustes/cuenta'); });
+        return;
+      }
+      const [tipoInfo, trainerLink] = await Promise.all([
+        pegasus.pegasusGetTipoDieta(),
+        pegasus.pegasusGetTrainerLink(),
+      ]);
+      const tipoActual = tipoInfo?.tipoDieta ?? 'macros';
+      const distingueDiasActual = tipoInfo?.dietaCerradaDistingueDias ?? false;
+      settings.setNutricionTipoCache({ tipoDieta: tipoActual, dietaCerradaDistingueDias: distingueDiasActual });
+
+      if (trainerLink) {
+        box.innerHTML = `
+          <h3 class="type-headline" style="margin-bottom:6px;">Tipo de nutrición</h3>
+          <p class="type-body" style="margin-bottom:10px;">${TIPO_NUTRICION_LABELS[tipoActual]}</p>
+          <p class="type-caption text-faint">🔒 Gestionado por tu entrenador</p>
+          <p class="type-caption text-faint" style="margin-top:2px;">Tu entrenador controla el tipo de nutrición.</p>
+        `;
+        return;
+      }
+
+      paintNutricionTipoPicker(box, close, mount, tipoActual, distingueDiasActual);
+    },
+  });
+}
+
+function paintNutricionTipoPicker(box, close, mount, tipoActual, distingueDiasActual) {
+  box.innerHTML = `
+    <h3 class="type-headline" style="margin-bottom:4px;">Tipo de nutrición</h3>
+    <p class="type-caption text-faint" style="margin-bottom:var(--space-4);">Cambiar de tipo no borra tus datos anteriores — quedan en el histórico.</p>
+    <div class="stack" id="nt-options">
+      <button type="button" class="import-mode-opt ${tipoActual === 'macros' ? 'import-mode-opt--active' : ''}" data-tipo="macros">
+        <div class="type-headline">Macros</div>
+      </button>
+      <button type="button" class="import-mode-opt ${tipoActual === 'cerrada' ? 'import-mode-opt--active' : ''}" data-tipo="cerrada">
+        <div class="type-headline">Dieta cerrada</div>
+      </button>
+    </div>
+    <label class="checkbox-row" id="nt-distingue-row" style="margin-top:var(--space-3); ${tipoActual === 'cerrada' ? '' : 'display:none;'}">
+      <span class="type-body">Distinguir Día ON / Día OFF</span>
+      <input type="checkbox" id="nt-distingue" ${distingueDiasActual ? 'checked' : ''} />
+    </label>
+    <div id="nt-confirm"></div>
+  `;
+
+  let seleccion = tipoActual;
+  let distingueDias = distingueDiasActual;
+
+  function guardar(nuevoTipo) {
+    return pegasus.pegasusUpdateTipoDieta(nuevoTipo, distingueDias).then(() => {
+      settings.setNutricionTipoCache({ tipoDieta: nuevoTipo, dietaCerradaDistingueDias: distingueDias });
+      toast(nuevoTipo === tipoActual ? 'Guardado' : 'Tipo de nutrición actualizado');
+      close();
+      render(mount);
+    });
+  }
+
+  function paintConfirm() {
+    const confirmBox = box.querySelector('#nt-confirm');
+    if (seleccion === tipoActual) {
+      confirmBox.innerHTML = distingueDias !== distingueDiasActual
+        ? `<button class="btn btn-primary btn-block" id="nt-save" style="margin-top:var(--space-3);">Guardar</button>`
+        : '';
+      confirmBox.querySelector('#nt-save')?.addEventListener('click', async (e) => {
+        e.currentTarget.disabled = true;
+        try { await guardar(tipoActual); } catch (err) { toast(err.message || 'No se pudo guardar'); e.currentTarget.disabled = false; }
+      });
+      return;
+    }
+    confirmBox.innerHTML = `
+      <div class="card" style="margin-top:var(--space-3);">
+        <p class="type-body" style="font-weight:600; margin-bottom:4px;">Cambiar tipo de nutrición</p>
+        <p class="type-caption text-faint" style="margin-bottom:var(--space-3);">
+          Vas a cambiar tu cuenta de ${TIPO_NUTRICION_LABELS[tipoActual]} a ${TIPO_NUTRICION_LABELS[seleccion]}. El plan
+          actual dejará de ser el plan nutricional activo, pero sus datos se conservarán en el histórico.
+        </p>
+        <button class="btn btn-primary btn-block" id="nt-confirm-btn">Cambiar</button>
+      </div>
+    `;
+    confirmBox.querySelector('#nt-confirm-btn').addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try { await guardar(seleccion); } catch (err) { toast(err.message || 'No se pudo cambiar el tipo de nutrición'); e.currentTarget.disabled = false; }
+    });
+  }
+
+  box.querySelectorAll('[data-tipo]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      seleccion = btn.dataset.tipo;
+      box.querySelectorAll('[data-tipo]').forEach((b) => b.classList.toggle('import-mode-opt--active', b === btn));
+      box.querySelector('#nt-distingue-row').style.display = seleccion === 'cerrada' ? '' : 'none';
+      paintConfirm();
+    });
+  });
+  box.querySelector('#nt-distingue').addEventListener('change', (e) => {
+    distingueDias = e.target.checked;
+    paintConfirm();
   });
 }

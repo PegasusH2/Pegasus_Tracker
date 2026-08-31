@@ -16,6 +16,7 @@ import { renderSettingsBackup } from './views/settings-backup.js';
 import { renderSettingsHub } from './views/settings-hub.js';
 import { renderSettingsAccount } from './views/settings-account.js';
 import { renderNutritionMacros } from './views/nutrition-macros.js';
+import { renderNutritionClosedDiet } from './views/nutrition-closed-diet.js';
 import { renderNutritionHistory } from './views/nutrition-history.js';
 import { hasExistingUserData, runOnboarding } from './views/onboarding.js';
 import { NAV_ICONS } from './core/ui.js';
@@ -58,17 +59,26 @@ function visibleProgresoSubtabs() {
   return PROGRESO_SUBTABS.filter((s) => sections[s.sectionKey]);
 }
 
-const NUTRICION_SUBTABS = [
-  { key: 'macros', label: 'Macros', path: '/nutricion', sectionKey: 'macros' },
-  { key: 'historico', label: 'Histórico', path: '/nutricion/historico', sectionKey: 'historico' },
-];
+// El tab "primario" de Nutrición es Macros o Dieta según profiles.tipoDieta
+// (caché síncrona en settings.js, ver setNutricionTipoCache) — nunca los dos
+// a la vez. Vive siempre en el mismo path '/nutricion', igual que antes.
+function nutricionPrimarySubtab() {
+  const cerrada = settings.getNutricionTipoCache().tipoDieta === 'cerrada';
+  return cerrada
+    ? { key: 'dieta', label: 'Dieta', path: '/nutricion', sectionKey: 'macros' }
+    : { key: 'macros', label: 'Macros', path: '/nutricion', sectionKey: 'macros' };
+}
+
+function nutricionSubtabs() {
+  return [nutricionPrimarySubtab(), { key: 'historico', label: 'Histórico', path: '/nutricion/historico', sectionKey: 'historico' }];
+}
 
 // nutricionSections controla qué pestañas se VEN (Personalizar) — los datos
 // en sí vienen en vivo del backend real de Pegasus Nutrition, ver
 // js/core/pegasus-nutrition.js.
 function visibleNutricionSubtabs() {
   const sections = settings.getNutricionSections();
-  return NUTRICION_SUBTABS.filter((s) => sections[s.sectionKey]);
+  return nutricionSubtabs().filter((s) => sections[s.sectionKey]);
 }
 
 function parseHash() {
@@ -111,8 +121,10 @@ function matchRoute(segments) {
 
   if (root === 'nutricion') {
     const sections = settings.getNutricionSections();
+    const primary = nutricionPrimarySubtab();
+    const primaryView = primary.key === 'dieta' ? renderNutritionClosedDiet : renderNutritionMacros;
     if (!sub) {
-      if (sections.macros) return { view: renderNutritionMacros, tab: 'nutricion', subtab: 'macros' };
+      if (sections.macros) return { view: primaryView, tab: 'nutricion', subtab: primary.key };
       if (sections.historico) return { view: renderNutritionHistory, tab: 'nutricion', subtab: 'historico' };
       return { view: renderHome, tab: 'home' };
     }
@@ -132,6 +144,16 @@ function matchRoute(segments) {
 
 export function navigate(path) {
   location.hash = path;
+}
+
+// A diferencia de navigate(), fuerza un re-render de la ruta actual aunque
+// el hash no cambie — location.hash = mismo valor no dispara 'hashchange'.
+// Lo usan las vistas de Nutrición cuando descubren que la caché síncrona de
+// tipoDieta (settings.getNutricionTipoCache) estaba desactualizada respecto
+// al backend real, para corregir qué vista se muestra sin esperar a la
+// siguiente navegación manual.
+export function refreshRoute() {
+  return renderRoute();
 }
 
 function renderShell() {
@@ -186,6 +208,7 @@ on('auth:recovery', () => navigate('/ajustes/cuenta'));
 on('prefs:changed', ({ key }) => {
   if (key === 'progressSections') renderBottomNav(currentTab);
   if (key === 'nutricionSections') renderBottomNav(currentTab);
+  if (key === 'nutricionTipo' && currentTab === 'nutricion') renderBottomNav(currentTab);
   if (key === 'theme') applyTheme(settings.getTheme());
 });
 
