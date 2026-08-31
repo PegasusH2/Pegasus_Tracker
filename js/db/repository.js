@@ -354,6 +354,11 @@ export async function reorderWorkoutExercise(workoutExerciseId, newOrder) {
   await enqueueUpdate('workoutExercises', workoutExerciseId);
 }
 
+export async function updateWorkoutExercise(workoutExerciseId, changes) {
+  await db.workoutExercises.update(workoutExerciseId, changes);
+  await enqueueUpdate('workoutExercises', workoutExerciseId);
+}
+
 // Devuelve los ejercicios de un entrenamiento, ordenados, con sus series incluidas.
 export async function getWorkoutDetail(workoutId) {
   const workout = await db.workouts.get(workoutId);

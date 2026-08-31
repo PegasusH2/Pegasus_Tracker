@@ -122,6 +122,43 @@ function openAddExerciseSheet(mount, workoutId) {
   });
 }
 
+// Sustituye el ejercicio de esta fila de la sesión por otro de la biblioteca
+// — series ya registradas y objetivos (reps/RIR/descanso) se mantienen tal
+// cual, solo cambia a qué ejercicio apuntan. Si el entrenamiento viene de una
+// rutina (workout.templateId) y ese ejercicio aparece EXACTAMENTE una vez en
+// ella, se OFRECE aplicar el mismo cambio a la rutina — nunca en automático:
+// la plantilla es intencionalmente independiente de la sesión (ver el
+// comentario de startWorkoutFromTemplate en repository.js), así que solo se
+// toca si el usuario lo pide explícitamente. Si el ejercicio aparece más de
+// una vez en la rutina no hay forma fiable de saber cuál sustituir, así que
+// se deja la plantilla intacta sin preguntar.
+function openChangeExerciseSheet(card, workout, oldExerciseId, workoutExerciseId, defaultUnit) {
+  openExercisePickerSheet({
+    title: 'Cambiar ejercicio',
+    selectLabel: 'Elegir',
+    onSelect: async (newExercise) => {
+      if (newExercise.id === oldExerciseId) return;
+      await repo.updateWorkoutExercise(workoutExerciseId, { exerciseId: newExercise.id });
+
+      if (workout.templateId) {
+        const templateExercises = await repo.getTemplateExercises(workout.templateId);
+        const matches = templateExercises.filter((te) => te.exerciseId === oldExerciseId);
+        if (matches.length === 1) {
+          const template = await repo.getTemplate(workout.templateId);
+          const ok = await openConfirmSheet(
+            `¿Aplicar también este cambio a la rutina "${template?.name ?? workout.name}", para que la próxima vez ya empiece con "${newExercise.name}"?`,
+            { confirmLabel: 'Actualizar rutina', cancelLabel: 'Solo esta vez', danger: false },
+          );
+          if (ok) await repo.updateTemplateExercise(matches[0].id, { exerciseId: newExercise.id });
+        }
+      }
+
+      await renderExerciseCard(card, workout, newExercise.id, workoutExerciseId, defaultUnit);
+      toast(`Cambiado a "${newExercise.name}"`);
+    },
+  });
+}
+
 async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit = 'kg') {
   const exercise = await repo.getExercise(exerciseId);
   // El ejercicio pudo borrarse de la biblioteca después de registrar esta
@@ -132,7 +169,10 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     card.innerHTML = `
       <div class="exercise-card-header">
         <h3 class="type-body text-faint" style="font-style:italic;">Ejercicio eliminado</h3>
-        <button class="btn btn-ghost-danger btn-sm remove-exercise">Quitar</button>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          <button class="btn btn-ghost btn-sm change-exercise">Cambiar</button>
+          <button class="btn btn-ghost-danger btn-sm remove-exercise">Quitar</button>
+        </div>
       </div>
     `;
     card.querySelector('.remove-exercise').addEventListener('click', async () => {
@@ -140,6 +180,9 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       if (!ok) return;
       await repo.removeExerciseFromWorkout(workoutExerciseId);
       card.remove();
+    });
+    card.querySelector('.change-exercise').addEventListener('click', () => {
+      openChangeExerciseSheet(card, workout, exerciseId, workoutExerciseId, defaultUnit);
     });
     return;
   }
@@ -185,7 +228,10 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
   card.innerHTML = `
     <div class="exercise-card-header">
       <h3 class="ex-title-link" style="cursor:pointer;">${escapeHtml(exercise.name)}</h3>
-      <button class="btn btn-ghost-danger btn-sm remove-exercise">Quitar</button>
+      <div style="display:flex; gap:6px; flex-shrink:0;">
+        <button class="btn btn-ghost btn-sm change-exercise">Cambiar</button>
+        <button class="btn btn-ghost-danger btn-sm remove-exercise">Quitar</button>
+      </div>
     </div>
     ${targetCaption(workoutExercise)}
     ${exercise.loadMode === 'perSide' ? `<div class="type-caption text-faint" style="margin-bottom:10px;">Peso por lado/mancuerna — la carga total se calcula ×2.</div>` : ''}
@@ -523,6 +569,10 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     card.remove();
   });
 
+  card.querySelector('.change-exercise').addEventListener('click', () => {
+    openChangeExerciseSheet(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+  });
+
   card.querySelector('.ex-title-link').addEventListener('click', () => {
     navigate(`/entreno/ejercicio/${exerciseId}`);
   });
@@ -651,6 +701,15 @@ function attachSetSwipeHandlers(setsList, card, workout, exerciseId, workoutExer
 // abre hacia la izquierda. Ignora cualquier gesto que empiece dentro de un
 // .set-swipe (cada serie ya gestiona su propio swipe de borrado) para que
 // ambas interacciones nunca compitan por el mismo gesto.
+//
+// Los listeners van en `swipe` (.exercise-swipe, el contenedor ESTÁTICO),
+// nunca en `content` (.exercise-swipe-content, el que se traslada): cuando el
+// PR está abierto, content.getBoundingClientRect() se ha movido fuera de la
+// pantalla junto con el transform, así que un dedo tocando la zona visible
+// del PR ya no cae dentro de content y esos listeners nunca se disparaban —
+// el usuario podía deslizar para ver el PR pero no para volver. `swipe` no se
+// mueve nunca (es quien recorta con overflow:hidden), así que siempre recibe
+// el gesto sin importar qué haya debajo del dedo en cada momento.
 function attachExercisePrSwipe(card) {
   const swipe = card.querySelector('.exercise-swipe');
   if (!swipe) return;
@@ -663,7 +722,7 @@ function attachExercisePrSwipe(card) {
   };
   const close = () => setTranslate(0);
 
-  content.addEventListener('pointerdown', (e) => {
+  swipe.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.set-swipe')) return;
     openWidth = content.getBoundingClientRect().width;
     startX = e.clientX;
@@ -673,7 +732,7 @@ function attachExercisePrSwipe(card) {
     baseTranslate = currentTranslate;
   });
 
-  content.addEventListener('pointermove', (e) => {
+  swipe.addEventListener('pointermove', (e) => {
     if (!dragging) return;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
@@ -703,9 +762,9 @@ function attachExercisePrSwipe(card) {
       close();
     }
   };
-  content.addEventListener('pointerup', endDrag);
-  content.addEventListener('pointercancel', endDrag);
-  content.addEventListener('pointerleave', endDrag);
+  swipe.addEventListener('pointerup', endDrag);
+  swipe.addEventListener('pointercancel', endDrag);
+  swipe.addEventListener('pointerleave', endDrag);
 }
 
 // Objetivo planeado (congelado al crear la sesión desde una plantilla) — solo
