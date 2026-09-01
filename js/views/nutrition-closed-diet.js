@@ -61,7 +61,7 @@ function groupItemsByMomento(items) {
   return [...conMomento, ...sinMomento];
 }
 
-function timelineHtml(items) {
+export function timelineHtml(items) {
   const grupos = groupItemsByMomento(items);
   if (grupos.length === 0) {
     return '<div class="empty-state">Todavía no hay alimentos en este plan.</div>';
@@ -91,7 +91,7 @@ function timelineHtml(items) {
   `;
 }
 
-function coachNoteHtml(notas) {
+export function coachNoteHtml(notas) {
   if (!notas) return '';
   return `
     <div class="card coach-note" style="margin-top:var(--space-4);">

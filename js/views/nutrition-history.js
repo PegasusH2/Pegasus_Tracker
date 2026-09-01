@@ -1,4 +1,4 @@
-// Nutrición · Histórico — versiones pasadas de Macros Y Dieta cerrada,
+// Nutrición · Historial — versiones pasadas de Macros Y Dieta cerrada,
 // leídas en vivo del backend real de Pegasus Nutrition (nutrition_macro_plan
 // + nutrition_closed_diet_plan). Siempre de solo lectura: cada actualización
 // ya es una fila nueva por fecha (ver js/core/pegasus-nutrition.js), así que
@@ -9,15 +9,17 @@ import * as pegasus from '../core/pegasus-nutrition.js';
 import * as settings from '../core/settings.js';
 import { getUser } from '../core/auth.js';
 import { formatDate } from '../core/format.js';
-import { replayEnterAnimation } from '../core/ui.js';
+import { openSheet, replayEnterAnimation } from '../core/ui.js';
 import { navigate } from '../app.js';
+import { macroBlockHtml } from './nutrition-macros.js';
+import { timelineHtml, coachNoteHtml } from './nutrition-closed-diet.js';
 
 export async function renderNutritionHistory(mount) {
   const user = await getUser();
   if (!user) {
     mount.innerHTML = `
-      <h1 class="type-title" style="margin-bottom:16px;">Histórico</h1>
-      <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tu histórico de Pegasus Nutrition.</div>
+      <h1 class="type-title" style="margin-bottom:16px;">Historial</h1>
+      <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tu historial de Pegasus Nutrition.</div>
       <button class="btn btn-primary btn-block" id="h-login" style="margin-top:var(--space-4);">Ir a Ajustes › Cuenta</button>
     `;
     replayEnterAnimation(mount);
@@ -46,27 +48,66 @@ export async function renderNutritionHistory(mount) {
   ].sort((a, b) => (a.plan.fecha < b.plan.fecha ? 1 : a.plan.fecha > b.plan.fecha ? -1 : 0));
 
   mount.innerHTML = `
-    <h1 class="type-title" style="margin-bottom:16px;">Histórico</h1>
+    <h1 class="type-title" style="margin-bottom:16px;">Historial</h1>
     ${!entradas.length ? `<div class="empty-state">Todavía no hay ningún registro nutricional.</div>` : `
-      <div class="grouped-list">
-        ${entradas.map(({ tipo, plan: p, esActual }) => `
-          <div class="grouped-row">
-            <div style="min-width:0;">
-              <div class="type-body row" style="justify-content:flex-start; gap:8px;">
-                <span>${formatDate(p.fecha)}</span>
-                ${esActual ? '<span class="badge badge-good">Actual</span>' : ''}
-              </div>
-              <div class="type-caption text-faint">
-                ${tipo === 'macros' ? 'Macros' : 'Dieta cerrada'}
-                ${tipo === 'macros'
-                  ? ` · ON ×${p.diasOn ?? '—'} · P${p.proteinaOn ?? '—'}/C${p.hidratosOn ?? '—'}/G${p.grasasOn ?? '—'} · OFF ×${p.diasOff ?? '—'} · P${p.proteinaOff ?? '—'}/C${p.hidratosOff ?? '—'}/G${p.grasasOff ?? '—'}`
-                  : ''}
-              </div>
-            </div>
-          </div>
-        `).join('')}
+      <div class="stack">
+        ${entradas.map((entrada, i) => historyCardHtml(entrada, i)).join('')}
       </div>
     `}
   `;
   replayEnterAnimation(mount);
+
+  entradas.forEach((entrada, i) => {
+    mount.querySelector(`[data-historial-index="${i}"]`)?.addEventListener('click', () => abrirDetalle(entrada));
+  });
+}
+
+function historyCardHtml({ tipo, plan: p, esActual }, index) {
+  const resumen = tipo === 'macros'
+    ? `Macros · ON P${p.proteinaOn ?? '—'}/C${p.hidratosOn ?? '—'}/G${p.grasasOn ?? '—'}`
+    : 'Dieta cerrada';
+  return `
+    <button type="button" class="card history-card" data-historial-index="${index}">
+      <div class="history-card-top">
+        <span class="type-headline">${esActual ? 'Versión actual' : 'Versión anterior'}</span>
+        ${esActual ? '<span class="badge badge-good">Actual</span>' : ''}
+      </div>
+      <div class="type-caption text-faint" style="margin-bottom:6px;">${formatDate(p.fecha)}</div>
+      <div class="type-body text-dim">${resumen}</div>
+    </button>
+  `;
+}
+
+async function abrirDetalle({ tipo, plan }) {
+  if (tipo === 'macros') {
+    openSheet(`
+      <h3 class="type-headline" style="margin-bottom:4px;">${formatDate(plan.fecha)}</h3>
+      <p class="type-caption text-faint" style="margin-bottom:16px;">Macros</p>
+      ${macroBlockHtml('Días ON', plan.diasOn, plan.proteinaOn, plan.hidratosOn, plan.grasasOn)}
+      ${macroBlockHtml('Días OFF', plan.diasOff, plan.proteinaOff, plan.hidratosOff, plan.grasasOff)}
+      ${(plan.normocalorico != null || plan.aguaLitros != null || plan.salGramos != null || plan.neatObjetivoPasos != null) ? `
+        <div class="type-caption text-faint">
+          ${[
+            plan.normocalorico != null ? `Mantenimiento ${plan.normocalorico} kcal` : null,
+            plan.aguaLitros != null ? `Agua ${plan.aguaLitros} L` : null,
+            plan.salGramos != null ? `Sal ${plan.salGramos} g` : null,
+            plan.neatObjetivoPasos != null ? `${plan.neatObjetivoPasos} pasos` : null,
+          ].filter(Boolean).join(' · ')}
+        </div>
+      ` : ''}
+    `);
+    return;
+  }
+
+  openSheet('<div id="hist-detail"><p class="type-caption text-faint">Cargando…</p></div>', {
+    onMount: async (sheet) => {
+      const items = await pegasus.pegasusListClosedDietItems(plan.id);
+      sheet.querySelector('#hist-detail').innerHTML = `
+        <h3 class="type-headline" style="margin-bottom:4px;">${formatDate(plan.fecha)}</h3>
+        <p class="type-caption text-faint" style="margin-bottom:16px;">Dieta cerrada</p>
+        ${timelineHtml(items)}
+        ${coachNoteHtml(plan.notas)}
+      `;
+    },
+  });
 }

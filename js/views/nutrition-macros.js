@@ -13,37 +13,40 @@ import { toast } from '../core/store.js';
 import { escapeHtml } from '../core/escape.js';
 import { navigate, refreshRoute } from '../app.js';
 
-function kcal(proteinG, carbsG, fatG) {
+const FLAME_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c1 3-3 4-3 8a3 3 0 1 0 6 0c0-1.2-.6-2-1-2.8.9.3 2 1.6 2 4a5 5 0 1 1-10 0C6 8 9 7 12 3Z"/></svg>`;
+
+export function kcal(proteinG, carbsG, fatG) {
   if (proteinG == null && carbsG == null && fatG == null) return null;
   return Math.round((proteinG || 0) * 4 + (carbsG || 0) * 4 + (fatG || 0) * 9);
 }
 
-function macroBlockHtml(label, days, proteinG, carbsG, fatG) {
+function ringHtml(label, value) {
+  return `
+    <div class="macro-ring-item">
+      <div class="macro-ring"><span class="macro-ring-value">${value ?? '—'}${value != null ? '<small>g</small>' : ''}</span></div>
+      <div class="macro-ring-label">${label}</div>
+    </div>
+  `;
+}
+
+// "Nutrición días de entreno/descanso" — objetivo diario (nunca consumo real,
+// ver cabecera del archivo) más los 3 macros como aros. days (×N/semana) se
+// añade junto a "Objetivo diario" en vez de en el título, para no recargar
+// la cabecera de la card.
+export function macroBlockHtml(label, days, proteinG, carbsG, fatG) {
   const calories = kcal(proteinG, carbsG, fatG);
   return `
-    <div class="type-caption text-dim" style="margin-bottom:4px;">${label}${days != null ? ` · ×${days}/semana` : ''}</div>
-    <div class="stat-hero" style="margin-bottom:0;">
-      <div class="stat-hero-value">
-        <span class="type-hero">${calories ?? '—'}</span>
-        ${calories != null ? `<span class="type-headline text-dim">kcal</span>` : ''}
+    <div class="card nutrition-hero">
+      <div class="nutrition-hero-top">
+        <div class="nutrition-hero-label">${FLAME_ICON} ${label}</div>
       </div>
+      <div class="nutrition-hero-kcal">${calories ?? '—'} <span class="type-headline text-dim">kcal</span></div>
+      <div class="type-caption text-faint">Objetivo diario${days != null ? ` · ×${days}/semana` : ''}</div>
     </div>
-    <div class="card stat-grid" style="margin-bottom:var(--space-4);">
-      <div class="stat-tile">
-        <div class="stat-label">Proteína</div>
-        <div class="stat-value">${proteinG ?? '—'}</div>
-        <div class="stat-sub">${proteinG != null ? 'g' : ''}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-label">Carbohidratos</div>
-        <div class="stat-value">${carbsG ?? '—'}</div>
-        <div class="stat-sub">${carbsG != null ? 'g' : ''}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-label">Grasa</div>
-        <div class="stat-value">${fatG ?? '—'}</div>
-        <div class="stat-sub">${fatG != null ? 'g' : ''}</div>
-      </div>
+    <div class="macro-ring-row">
+      ${ringHtml('Proteínas', proteinG)}
+      ${ringHtml('Carbohidratos', carbsG)}
+      ${ringHtml('Grasas', fatG)}
     </div>
   `;
 }
@@ -96,8 +99,8 @@ async function paint(mount) {
       ${soloLectura ? '' : '<button class="btn btn-primary btn-block" id="m-create" style="margin-top:var(--space-4);">Crear el primero</button>'}
     ` : `
       <div class="type-caption text-faint" style="margin-bottom:16px;">Actualizado ${formatDate(plan.fecha)}</div>
-      ${macroBlockHtml('Días ON', plan.diasOn, plan.proteinaOn, plan.hidratosOn, plan.grasasOn)}
-      ${macroBlockHtml('Días OFF', plan.diasOff, plan.proteinaOff, plan.hidratosOff, plan.grasasOff)}
+      ${macroBlockHtml('Nutrición días de entreno', plan.diasOn, plan.proteinaOn, plan.hidratosOn, plan.grasasOn)}
+      ${macroBlockHtml('Nutrición días de descanso', plan.diasOff, plan.proteinaOff, plan.hidratosOff, plan.grasasOff)}
       ${(plan.normocalorico != null || plan.aguaLitros != null || plan.salGramos != null || plan.neatObjetivoPasos != null) ? `
         <div class="type-caption text-faint" style="margin-bottom:var(--space-4);">
           ${[

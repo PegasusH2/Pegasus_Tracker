@@ -59,9 +59,11 @@ function visibleProgresoSubtabs() {
   return PROGRESO_SUBTABS.filter((s) => sections[s.sectionKey]);
 }
 
-// El tab "primario" de Nutrición es Macros o Dieta según profiles.tipoDieta
+// El tab primario de Nutrición es Macros o Dieta según profiles.tipoDieta
 // (caché síncrona en settings.js, ver setNutricionTipoCache) — nunca los dos
-// a la vez. Vive siempre en el mismo path '/nutricion', igual que antes.
+// a la vez. "Hoy" (resumen del día) y "Planes" (editar) se fusionaron en una
+// sola pestaña: cada vista pinta su propio resumen de hoy y, debajo, sus
+// controles de edición (ocultos si hay entrenador vinculado).
 function nutricionPrimarySubtab() {
   const cerrada = settings.getNutricionTipoCache().tipoDieta === 'cerrada';
   return cerrada
@@ -70,7 +72,7 @@ function nutricionPrimarySubtab() {
 }
 
 function nutricionSubtabs() {
-  return [nutricionPrimarySubtab(), { key: 'historico', label: 'Histórico', path: '/nutricion/historico', sectionKey: 'historico' }];
+  return [nutricionPrimarySubtab(), { key: 'historico', label: 'Historial', path: '/nutricion/historico', sectionKey: 'historico' }];
 }
 
 // nutricionSections controla qué pestañas se VEN (Personalizar) — los datos

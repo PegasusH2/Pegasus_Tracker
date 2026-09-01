@@ -897,3 +897,137 @@
   box-shadow: none;
   border: 0.5px solid var(--border);
 }
+.coach-note .type-micro {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.coach-note .type-micro svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* ============================================================
+   Nutrición · "Hoy" — resumen diario de un vistazo (ver
+   js/views/nutrition-today.js). Tarjeta hero + aros de macros +
+   selector Entrenamiento/Descanso. Bordes más generosos (24px) a
+   propósito, para que esta tarjeta destaque como la principal de la
+   pantalla frente al resto de cards (16px).
+   ============================================================ */
+.nutrition-hero {
+  border-radius: 24px;
+  padding: var(--space-5) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.nutrition-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.nutrition-hero-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.nutrition-hero-label svg { width: 18px; height: 18px; color: var(--accent); flex-shrink: 0; }
+
+.nutrition-hero-kcal {
+  font-size: 44px;
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 2px;
+}
+
+.macro-ring-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.macro-ring-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.macro-ring {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.macro-ring-value {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.macro-ring-value small { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+
+.macro-ring-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* Selector Entrenamiento/Descanso — más grande y táctil que el .segmented
+   de subtabs, pensado para tocarse con una mano como acción principal. */
+.dia-tipo-toggle {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.dia-tipo-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: var(--shadow-card);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.dia-tipo-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+.dia-tipo-btn.active { background: var(--accent); color: var(--accent-contrast); }
+
+/* ============================================================
+   Nutrición · Historial — cada versión es una tarjeta pulsable (ver
+   js/views/nutrition-history.js) en vez de una fila de lista densa.
+   ============================================================ */
+.history-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border-radius: 20px;
+  transition: transform var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+.history-card:active { transform: scale(0.98); opacity: 0.9; }
+
+.history-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: 4px;
+}
