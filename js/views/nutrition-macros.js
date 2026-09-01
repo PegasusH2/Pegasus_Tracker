@@ -1,4 +1,4 @@
-// Nutrición · Macros — datos REALES de Pegasus Nutrition (tabla
+// Nutrición · Macros — datos REALES de Pegasus Coach (tabla
 // nutrition_macro_plan en Supabase, ver js/core/pegasus-nutrition.js), no un
 // duplicado local. Modelo real: un ciclo semanal de días ON/OFF con su
 // propio juego de macros cada uno (no "entrenamiento/descanso" por día de la
@@ -60,7 +60,7 @@ async function paint(mount) {
   if (!user) {
     mount.innerHTML = `
       <h1 class="type-title" style="margin-bottom:16px;">Macros</h1>
-      <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tus macros de Pegasus Nutrition.</div>
+      <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tus macros de Pegasus Coach.</div>
       <button class="btn btn-primary btn-block" id="m-login" style="margin-top:var(--space-4);">Ir a Ajustes › Cuenta</button>
     `;
     replayEnterAnimation(mount);
@@ -69,7 +69,7 @@ async function paint(mount) {
   }
 
   // Un cliente con entrenador vinculado (accepted) no gestiona su propia
-  // nutrición — la RLS real de Pegasus Nutrition ya lo impide en el
+  // nutrición — la RLS real de Pegasus Coach ya lo impide en el
   // servidor (ver macroplan_write), pero además de eso la interfaz no debe
   // ni ofrecer los controles: es el mismo criterio que ya aplica el
   // selector de Tipo de nutrición en Ajustes (ver settings-hub.js).
@@ -95,7 +95,7 @@ async function paint(mount) {
   mount.innerHTML = `
     <h1 class="type-title" style="margin-bottom:16px;">Macros</h1>
     ${!plan ? `
-      <div class="empty-state">${soloLectura ? 'Tu entrenador todavía no te ha asignado un plan de macros.' : 'Tu entrenador todavía no ha configurado tus macros en Pegasus Nutrition.'}</div>
+      <div class="empty-state">${soloLectura ? 'Tu entrenador todavía no te ha asignado un plan de macros.' : 'Tu entrenador todavía no ha configurado tus macros en Pegasus Coach.'}</div>
       ${soloLectura ? '' : '<button class="btn btn-primary btn-block" id="m-create" style="margin-top:var(--space-4);">Crear el primero</button>'}
     ` : `
       <div class="type-caption text-faint" style="margin-bottom:16px;">Actualizado ${formatDate(plan.fecha)}</div>

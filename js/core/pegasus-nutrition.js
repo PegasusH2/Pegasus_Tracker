@@ -1,4 +1,4 @@
-// Puente de solo-red hacia el backend REAL de Pegasus Nutrition — mismo
+// Puente de solo-red hacia el backend REAL de Pegasus Coach — mismo
 // proyecto Supabase que usa Tracker para su propia cuenta/sync (ver
 // supabase-client.js), pero un esquema ajeno (tablas nutrition_macro_plan,
 // nutrition_closed_diet_plan/_item, profiles, trainer_client_links,

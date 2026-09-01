@@ -1,4 +1,4 @@
-// Nutrición · Dieta cerrada — datos REALES de Pegasus Nutrition (tablas
+// Nutrición · Dieta cerrada — datos REALES de Pegasus Coach (tablas
 // nutrition_closed_diet_plan/_item en Supabase, ver
 // js/core/pegasus-nutrition.js), alternativa a Macros cuando
 // profiles.tipoDieta = 'cerrada'. Mismo patrón que nutrition-macros.js:
@@ -110,7 +110,7 @@ async function paint(mount) {
   if (!user) {
     mount.innerHTML = `
       <h1 class="type-title" style="margin-bottom:16px;">Dieta</h1>
-      <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tu dieta de Pegasus Nutrition.</div>
+      <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tu dieta de Pegasus Coach.</div>
       <button class="btn btn-primary btn-block" id="dc-login" style="margin-top:var(--space-4);">Ir a Ajustes › Cuenta</button>
     `;
     replayEnterAnimation(mount);

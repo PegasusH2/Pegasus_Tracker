@@ -414,7 +414,7 @@ function openTemaSheet(mount) {
 const TIPO_NUTRICION_LABELS = { macros: 'Macros', cerrada: 'Dieta cerrada' };
 
 // Modelo mutuamente excluyente: profiles.tipoDieta en el backend real de
-// Pegasus Nutrition (ver js/core/pegasus-nutrition.js) decide si esta cuenta
+// Pegasus Coach (ver js/core/pegasus-nutrition.js) decide si esta cuenta
 // usa Macros o Dieta cerrada. Si hay un entrenador vinculado (accepted) es
 // él quien lo gestiona — RLS lo impide del lado del servidor, pero aquí
 // además se bloquea la UI proactivamente en vez de esperar al error.

@@ -1,5 +1,5 @@
 // Nutrición · Historial — versiones pasadas de Macros Y Dieta cerrada,
-// leídas en vivo del backend real de Pegasus Nutrition (nutrition_macro_plan
+// leídas en vivo del backend real de Pegasus Coach (nutrition_macro_plan
 // + nutrition_closed_diet_plan). Siempre de solo lectura: cada actualización
 // ya es una fila nueva por fecha (ver js/core/pegasus-nutrition.js), así que
 // el pasado completo de ambos modelos está aquí sin necesitar nada aparte.
@@ -19,7 +19,7 @@ export async function renderNutritionHistory(mount) {
   if (!user) {
     mount.innerHTML = `
       <h1 class="type-title" style="margin-bottom:16px;">Historial</h1>
-      <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tu historial de Pegasus Nutrition.</div>
+      <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tu historial de Pegasus Coach.</div>
       <button class="btn btn-primary btn-block" id="h-login" style="margin-top:var(--space-4);">Ir a Ajustes › Cuenta</button>
     `;
     replayEnterAnimation(mount);

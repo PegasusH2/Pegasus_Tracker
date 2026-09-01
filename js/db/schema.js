@@ -518,7 +518,7 @@ db.version(16).stores({
 });
 
 // v17: módulo de Nutrición. dietPlans/dietMeals/dietFoods/nutritionMacroTargets
-// son 100% locales (Dexie) — Pegasus Nutrition ya tiene su propio backend real
+// son 100% locales (Dexie) — Pegasus Coach ya tiene su propio backend real
 // en Supabase (nutrition_macro_plan, trainer_client_links, etc., ver
 // supabase/schema.sql del proyecto de Nutrition), así que estas tablas de
 // Tracker NUNCA se sincronizan, para no duplicar/chocar con ese sistema (ver
@@ -548,7 +548,7 @@ db.version(17).stores({
 });
 
 // v18: Nutrición pasa a leer/escribir en vivo contra el backend real de
-// Pegasus Nutrition (nutrition_macro_plan en Supabase, ver
+// Pegasus Coach (nutrition_macro_plan en Supabase, ver
 // js/core/pegasus-nutrition.js) en vez de duplicar datos localmente. La
 // pestaña "Dieta" se retira (ese backend no tiene tablas de dietas/comidas,
 // nada que unificar) y con ella dietPlans/dietMeals/dietFoods;

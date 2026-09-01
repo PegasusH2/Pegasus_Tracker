@@ -76,7 +76,7 @@ function nutricionSubtabs() {
 }
 
 // nutricionSections controla qué pestañas se VEN (Personalizar) — los datos
-// en sí vienen en vivo del backend real de Pegasus Nutrition, ver
+// en sí vienen en vivo del backend real de Pegasus Coach, ver
 // js/core/pegasus-nutrition.js.
 function visibleNutricionSubtabs() {
   const sections = settings.getNutricionSections();

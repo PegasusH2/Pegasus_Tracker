@@ -29,7 +29,7 @@ let cache = { ...DEFAULTS };
 let loaded = false;
 
 // Caché EN MEMORIA (nunca persistida aquí — vive en profiles.tipoDieta, en
-// el backend real de Pegasus Nutrition) del tipo de nutrición vigente y de
+// el backend real de Pegasus Coach) del tipo de nutrición vigente y de
 // si hay un entrenador vinculado gestionándolo. Sirve para que js/app.js
 // pueda decidir de forma síncrona qué subtab de Nutrición mostrar (Macros o
 // Dieta cerrada, nunca las dos) sin bloquear el shell; el valor se
