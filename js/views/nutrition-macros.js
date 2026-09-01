@@ -8,7 +8,7 @@ import * as pegasus from '../core/pegasus-nutrition.js';
 import * as settings from '../core/settings.js';
 import { getUser } from '../core/auth.js';
 import { formatDate, todayISO } from '../core/format.js';
-import { openSheet, openConfirmSheet } from '../core/ui.js';
+import { openSheet, openConfirmSheet, replayEnterAnimation } from '../core/ui.js';
 import { toast } from '../core/store.js';
 import { escapeHtml } from '../core/escape.js';
 import { navigate, refreshRoute } from '../app.js';
@@ -60,11 +60,21 @@ async function paint(mount) {
       <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tus macros de Pegasus Nutrition.</div>
       <button class="btn btn-primary btn-block" id="m-login" style="margin-top:var(--space-4);">Ir a Ajustes › Cuenta</button>
     `;
+    replayEnterAnimation(mount);
     mount.querySelector('#m-login').addEventListener('click', () => navigate('/ajustes/cuenta'));
     return;
   }
 
-  const tipoInfo = await pegasus.pegasusGetTipoDieta();
+  // Un cliente con entrenador vinculado (accepted) no gestiona su propia
+  // nutrición — la RLS real de Pegasus Nutrition ya lo impide en el
+  // servidor (ver macroplan_write), pero además de eso la interfaz no debe
+  // ni ofrecer los controles: es el mismo criterio que ya aplica el
+  // selector de Tipo de nutrición en Ajustes (ver settings-hub.js).
+  const [tipoInfo, trainerLink] = await Promise.all([
+    pegasus.pegasusGetTipoDieta(),
+    pegasus.pegasusGetTrainerLink(),
+  ]);
+  const soloLectura = !!trainerLink;
   settings.setNutricionTipoCache({
     tipoDieta: tipoInfo?.tipoDieta ?? 'macros',
     dietaCerradaDistingueDias: tipoInfo?.dietaCerradaDistingueDias ?? false,
@@ -82,8 +92,8 @@ async function paint(mount) {
   mount.innerHTML = `
     <h1 class="type-title" style="margin-bottom:16px;">Macros</h1>
     ${!plan ? `
-      <div class="empty-state">Tu entrenador todavía no ha configurado tus macros en Pegasus Nutrition.</div>
-      <button class="btn btn-primary btn-block" id="m-create" style="margin-top:var(--space-4);">Crear el primero</button>
+      <div class="empty-state">${soloLectura ? 'Tu entrenador todavía no te ha asignado un plan de macros.' : 'Tu entrenador todavía no ha configurado tus macros en Pegasus Nutrition.'}</div>
+      ${soloLectura ? '' : '<button class="btn btn-primary btn-block" id="m-create" style="margin-top:var(--space-4);">Crear el primero</button>'}
     ` : `
       <div class="type-caption text-faint" style="margin-bottom:16px;">Actualizado ${formatDate(plan.fecha)}</div>
       ${macroBlockHtml('Días ON', plan.diasOn, plan.proteinaOn, plan.hidratosOn, plan.grasasOn)}
@@ -98,12 +108,20 @@ async function paint(mount) {
           ].filter(Boolean).join(' · ')}
         </div>
       ` : ''}
-      ${plan.notas ? `<p class="type-body text-dim" style="margin-bottom:var(--space-4);">${escapeHtml(plan.notas)}</p>` : ''}
-      <button class="btn btn-secondary btn-block" id="m-edit">Editar este registro</button>
-      <button class="btn btn-primary btn-block" id="m-new" style="margin-top:8px;">Nuevo registro</button>
-      <button class="btn btn-ghost-danger btn-block" id="m-delete" style="margin-top:8px;">Eliminar</button>
+      ${plan.notas ? `
+        <div class="card coach-note" style="margin-bottom:var(--space-4);">
+          <div class="type-micro text-good" style="margin-bottom:4px;">Nota de tu entrenador</div>
+          <p class="type-body">${escapeHtml(plan.notas)}</p>
+        </div>
+      ` : ''}
+      ${soloLectura ? '' : `
+        <button class="btn btn-secondary btn-block" id="m-edit">Editar este registro</button>
+        <button class="btn btn-primary btn-block" id="m-new" style="margin-top:8px;">Nuevo registro</button>
+        <button class="btn btn-ghost-danger btn-block" id="m-delete" style="margin-top:8px;">Eliminar</button>
+      `}
     `}
   `;
+  replayEnterAnimation(mount);
 
   mount.querySelector('#m-create')?.addEventListener('click', () => openMacroForm(mount));
   mount.querySelector('#m-edit')?.addEventListener('click', () => openMacroForm(mount, plan));

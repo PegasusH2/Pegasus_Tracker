@@ -809,3 +809,91 @@
   text-align: center;
   cursor: pointer;
 }
+
+/* ============================================================
+   Nutrición · Dieta cerrada — timeline de comidas (solo lectura, ver
+   js/views/nutrition-closed-diet.js). Un nodo por grupo de `momento`:
+   marcador + línea vertical a la izquierda, card de alimentos a la
+   derecha. Usa los mismos tokens que el resto de Tracker (--accent,
+   --surface, --border) para que funcione igual en los 3 temas.
+   ============================================================ */
+.meal-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.meal-node {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.meal-node-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 10px;
+  flex-shrink: 0;
+  padding-top: 6px;
+}
+
+.meal-node-dot {
+  width: 10px;
+  height: 10px;
+  min-height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.meal-node-line {
+  flex: 1;
+  width: 1.5px;
+  background: var(--border);
+  margin-top: 4px;
+}
+
+.meal-node-content {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: var(--space-5);
+}
+.meal-node:last-child .meal-node-content { padding-bottom: 0; }
+
+.meal-node-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.meal-card {
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.meal-food-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: 15px;
+}
+
+.meal-food-name { min-width: 0; overflow-wrap: anywhere; }
+
+.meal-food-grams {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Nota del entrenador — visible pero secundaria respecto a las comidas/macros. */
+.coach-note {
+  background: var(--accent-soft);
+  box-shadow: none;
+  border: 0.5px solid var(--border);
+}

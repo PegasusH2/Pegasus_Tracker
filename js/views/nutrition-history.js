@@ -9,6 +9,7 @@ import * as pegasus from '../core/pegasus-nutrition.js';
 import * as settings from '../core/settings.js';
 import { getUser } from '../core/auth.js';
 import { formatDate } from '../core/format.js';
+import { replayEnterAnimation } from '../core/ui.js';
 import { navigate } from '../app.js';
 
 export async function renderNutritionHistory(mount) {
@@ -19,6 +20,7 @@ export async function renderNutritionHistory(mount) {
       <div class="empty-state">Inicia sesión con tu cuenta de Pegasus para ver tu histórico de Pegasus Nutrition.</div>
       <button class="btn btn-primary btn-block" id="h-login" style="margin-top:var(--space-4);">Ir a Ajustes › Cuenta</button>
     `;
+    replayEnterAnimation(mount);
     mount.querySelector('#h-login').addEventListener('click', () => navigate('/ajustes/cuenta'));
     return;
   }
@@ -50,9 +52,9 @@ export async function renderNutritionHistory(mount) {
         ${entradas.map(({ tipo, plan: p, esActual }) => `
           <div class="grouped-row">
             <div style="min-width:0;">
-              <div class="type-body">
-                ${formatDate(p.fecha)}
-                ${esActual ? '<span class="type-caption" style="color:var(--accent); font-weight:700;"> · Actual</span>' : ''}
+              <div class="type-body row" style="justify-content:flex-start; gap:8px;">
+                <span>${formatDate(p.fecha)}</span>
+                ${esActual ? '<span class="badge badge-good">Actual</span>' : ''}
               </div>
               <div class="type-caption text-faint">
                 ${tipo === 'macros' ? 'Macros' : 'Dieta cerrada'}
@@ -66,4 +68,5 @@ export async function renderNutritionHistory(mount) {
       </div>
     `}
   `;
+  replayEnterAnimation(mount);
 }

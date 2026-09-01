@@ -2,6 +2,20 @@ import * as repo from '../db/repository.js';
 import { escapeHtml } from './escape.js';
 import { toast } from './store.js';
 
+// Repite la animación de entrada (.view-enter, ver css/base.css) sobre un
+// nodo ya montado. El router (js/app.js) solo la aplica UNA VEZ al crear el
+// mount, antes de esperar a que la vista cargue sus datos — si la vista es
+// asíncrona, para cuando el contenido real llega la animación ya ha
+// terminado sobre un div vacío. Llamar a esto justo después de fijar el
+// innerHTML real hace que el fade se vea sobre el contenido de verdad, y
+// además permite repetirlo cuando una vista se repinta a sí misma
+// (paint(mount) tras guardar/borrar) sin pasar por una navegación nueva.
+export function replayEnterAnimation(el) {
+  el.classList.remove('view-enter');
+  void el.offsetWidth; // fuerza reflow para que el navegador "olvide" la animación anterior
+  el.classList.add('view-enter');
+}
+
 // Helper compartido para mostrar un modal tipo "bottom sheet" (patrón iOS).
 // onClose (opcional) se llama al cerrarse por CUALQUIER vía — botón, tocar
 // fuera o Escape — como máximo una vez.
