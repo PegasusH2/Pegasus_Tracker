@@ -488,8 +488,10 @@
   background: var(--surface);
   border: 1.5px solid var(--border);
   border-radius: var(--radius-lg);
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 .import-mode-opt--active { border-color: var(--accent); background: var(--accent-soft); }
+.import-mode-opt:active { transform: scale(0.98); }
 
 /* Anillo de progreso simulado de la pantalla "Analizando…" */
 .analyzing-ring {

@@ -226,6 +226,20 @@ button {
 }
 .view-enter { animation: fadeSlideUp var(--dur-medium) var(--ease); }
 
+/* Red de seguridad global de accesibilidad: acorta toda transición/animación
+   a prácticamente instantánea en vez de quitarla — el cambio de estado final
+   (color, posición activa, etc.) sigue produciéndose, solo que sin recorrido
+   visual. Cubre toda la app (sheets, toasts, nav, swipes...) sin tener que
+   tocar cada selector uno a uno. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ============================================================
    Tema "Blanco" — premium, claro, fijo (ignora el modo oscuro del
    sistema a propósito, ver el guard de arriba). Mismo acento rojo que

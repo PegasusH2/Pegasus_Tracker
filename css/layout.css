@@ -47,7 +47,7 @@ main.view.view--focus {
   gap: 5px;
   min-height: 44px;
   color: var(--text-tertiary);
-  transition: color 180ms var(--ease), transform var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .nav-icon { display: flex; }
@@ -62,7 +62,7 @@ main.view.view--focus {
   background: var(--accent);
   opacity: 0;
   transform: scaleX(0.4);
-  transition: opacity 180ms var(--ease), transform 180ms var(--ease);
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 .nav-item.active .nav-dot { opacity: 1; transform: scaleX(1); }
 
