@@ -93,7 +93,8 @@ async function paint(mount) {
   const plan = await pegasus.pegasusGetLatestMacroPlan();
 
   mount.innerHTML = `
-    <h1 class="type-title" style="margin-bottom:16px;">Macros</h1>
+    <h1 class="type-title" style="margin-bottom:${soloLectura ? '4px' : '16px'};">Macros</h1>
+    ${soloLectura ? '<p class="type-caption text-faint" style="margin-bottom:16px;">🔒 Gestionado por tu entrenador</p>' : ''}
     ${!plan ? `
       <div class="empty-state">${soloLectura ? 'Tu entrenador todavía no te ha asignado un plan de macros.' : 'Tu entrenador todavía no ha configurado tus macros en Pegasus Coach.'}</div>
       ${soloLectura ? '' : '<button class="btn btn-primary btn-block" id="m-create" style="margin-top:var(--space-4);">Crear el primero</button>'}
