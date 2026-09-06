@@ -288,7 +288,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
   const setsList = card.querySelector('.sets-list');
   setsList.innerHTML = currentSets.map((s) => {
     const done = s.done === true;
-    const canMarkDone = s.weight != null && s.reps != null;
+    const canMarkDone = isSetComplete(s);
     const soloVal = s.weight != null ? roundForDisplay(toUnit(s.weight, soloUnit), 1) : '';
     const type = s.type ?? 'normal';
     const rangeDone = checkRangeCompletion(s, workoutExercise);
@@ -490,8 +490,8 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     btn.addEventListener('click', async () => {
       const setId = btn.dataset.setId;
       const current = currentSets.find((s) => s.id === setId);
-      if (!current.done && (current.weight == null || current.reps == null)) {
-        toast('Indica peso y repeticiones antes de marcarla como realizada');
+      if (!current.done && !isSetComplete(current)) {
+        toast(current.type === BODYWEIGHT_TYPE ? 'Indica las repeticiones antes de marcarla como realizada' : 'Indica peso y repeticiones antes de marcarla como realizada');
         return;
       }
       await repo.updateSet(setId, { done: !current.done });
@@ -670,14 +670,24 @@ function weightSummary(s) {
   return `${formatTotal(s.weight, 'kg')} · ${formatTotal(s.weight, 'lb')}`;
 }
 
-// Deriva el nuevo `done` a partir de si la serie ERA y ES completa (peso +
-// reps) tras este cambio. Solo fuerza a `true` en el instante en que PASA a
-// estar completa — nunca pisa un desmarcado manual si ya estaba completa
-// antes de este cambio (p.ej. el usuario la desmarca a mano para repetirla y
-// luego corrige un valor: no queremos volver a marcarla sola).
+// "Peso corporal": el ejercicio se hace con el propio cuerpo (dominadas,
+// fondos, plancha...) — completar la serie solo exige reps, nunca peso (el
+// campo de peso sigue ahí por si se añade lastre, pero es opcional).
+const BODYWEIGHT_TYPE = 'pesocorporal';
+function isSetComplete(set) {
+  if (set.reps == null) return false;
+  return set.type === BODYWEIGHT_TYPE ? true : set.weight != null;
+}
+
+// Deriva el nuevo `done` a partir de si la serie ERA y ES completa tras este
+// cambio (peso + reps, salvo "Peso corporal": solo reps). Solo fuerza a
+// `true` en el instante en que PASA a estar completa — nunca pisa un
+// desmarcado manual si ya estaba completa antes de este cambio (p.ej. el
+// usuario la desmarca a mano para repetirla y luego corrige un valor: no
+// queremos volver a marcarla sola).
 function deriveDoneOnCommit(current, newWeight, newReps) {
-  const wasComplete = current.weight != null && current.reps != null;
-  const isComplete = newWeight != null && newReps != null;
+  const wasComplete = isSetComplete(current);
+  const isComplete = isSetComplete({ ...current, weight: newWeight, reps: newReps });
   if (!isComplete) return false;
   return wasComplete ? current.done : true;
 }
@@ -844,7 +854,7 @@ function targetCaption(we) {
   return `<div class="type-caption text-faint" style="margin-bottom:10px;">Objetivo: ${parts.join(' · ')}</div>`;
 }
 
-const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente', amrap: 'AMRAP' };
+const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente', amrap: 'AMRAP', pesocorporal: 'Peso corporal' };
 function setTypeLabel(type) {
   return SET_TYPE_LABELS[type] ?? 'Normal';
 }
@@ -852,7 +862,7 @@ function setTypeLabel(type) {
 // Sheet compacto para elegir el tipo de serie — se abre solo al pedirlo (sección
 // 18 del pedido: "no mostrar cuatro botones grandes permanentemente").
 function openSetTypeSheet(currentType, onSelect) {
-  const options = ['normal', 'fallo', 'restpause', 'descendente', 'amrap'];
+  const options = ['normal', 'fallo', 'restpause', 'descendente', 'amrap', 'pesocorporal'];
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:12px;">Tipo de serie</h3>
     <div class="grouped-list">

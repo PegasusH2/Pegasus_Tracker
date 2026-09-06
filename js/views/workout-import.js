@@ -18,7 +18,7 @@ import { analyzeWorkoutPhoto } from '../core/ai-import.js';
 import { matchExerciseName } from '../core/exercise-match.js';
 import * as settings from '../core/settings.js';
 
-const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente', amrap: 'AMRAP' };
+const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente', amrap: 'AMRAP', pesocorporal: 'Peso corporal' };
 
 function uid(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2)}`;
@@ -650,7 +650,7 @@ function openMatchPicker(item, onChange) {
 }
 
 function openTypeChoiceSheet(current, onSelect) {
-  const options = ['normal', 'fallo', 'restpause', 'descendente', 'amrap'];
+  const options = ['normal', 'fallo', 'restpause', 'descendente', 'amrap', 'pesocorporal'];
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:12px;">Tipo de serie</h3>
     <div class="grouped-list">

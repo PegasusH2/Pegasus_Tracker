@@ -9,7 +9,7 @@
 export const WORKER_URL = 'https://fitness-tracker-import.pegasush2.workers.dev';
 export const APP_SHARED_TOKEN = 'ec5ce8f09593adbab9aa8f70deda1b330ae58a91531ffa44';
 
-const SET_TYPES = ['normal', 'fallo', 'restpause', 'descendente', 'amrap'];
+const SET_TYPES = ['normal', 'fallo', 'restpause', 'descendente', 'amrap', 'pesocorporal'];
 
 // Cotas defensivas frente a una respuesta de Gemini mal formada/alucinada —
 // sin límite, un "sets: 999999999" sobreviviría la limpieza de tipos y
