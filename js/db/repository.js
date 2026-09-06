@@ -109,7 +109,7 @@ export async function countLocalRows() {
 // crea vacía la mayoría de las veces y se rellena poco a poco.
 const SET_NUMERIC_FIELDS = [
   'weight', 'weightKgPart', 'weightLbPart', 'restSeconds',
-  'barWeightKg', 'plateWeightPerSideKg', 'addedWeightKg',
+  'barWeightKg', 'plateWeightPerSideKg', 'plateWeightPerSideLbPart', 'addedWeightKg',
 ];
 const SET_INT_FIELDS = ['reps', 'rir', 'rpe'];
 
@@ -629,10 +629,13 @@ export async function addSet(workoutExerciseId, values = {}) {
     type: values.type ?? 'normal',
     restPauseExtra: values.restPauseExtra ?? null,
     dropSteps: values.dropSteps ?? null,
-    // Desglose de equipamiento (barra+discos / lastre) — aún sin UI, reservado
-    // para la fase de equipamiento; weight sigue siendo siempre el total en kg.
+    // Desglose de equipamiento (barra+discos / lastre) — weight sigue siendo
+    // siempre el total en kg. plateWeightPerSideLbPart es el componente en lb
+    // de los discos (discos pequeños fraccionarios), que se SUMA a
+    // plateWeightPerSideKg — mismo patrón que weightKgPart/weightLbPart.
     barWeightKg: values.barWeightKg ?? null,
     plateWeightPerSideKg: values.plateWeightPerSideKg ?? null,
+    plateWeightPerSideLbPart: values.plateWeightPerSideLbPart ?? null,
     addedWeightKg: values.addedWeightKg ?? null,
     // Confirmación manual de que la serie se realizó de verdad — nunca se
     // marca sola por tener peso/reps rellenados (p.ej. al copiar la última

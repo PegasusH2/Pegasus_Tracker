@@ -199,10 +199,12 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
   const enabledUnits = getWeightUnitsEnabled();
   const dualUnit = enabledUnits.kg && enabledUnits.lb;
   const soloUnit = enabledUnits.kg ? 'kg' : 'lb';
-  // Unidad para campos que solo admiten UN valor a la vez (barra/discos,
-  // escalones de descendente) — no tienen espacio para un desglose kg+lb
-  // como el peso normal, así que usan la unidad activa (o la última tocada
-  // si ambas están activas).
+  // Unidad para campos que solo admiten UN valor a la vez (la barra en sí, y
+  // los escalones de descendente) — la barra es un material físico fijo, no
+  // tiene sentido mezclar unidades ahí. Los DISCOS sí soportan combinar kg+lb
+  // (ver más abajo, mismo patrón que weightKgPart/weightLbPart): es habitual
+  // tener discos grandes en kg y discos pequeños "fraccionarios" en lb sobre
+  // la misma barra.
   const singleUnit = dualUnit ? defaultUnit : soloUnit;
   const isBarbell = exercise.equipmentType === 'barbell';
   const bars = isBarbell ? await repo.listBars() : [];
@@ -323,10 +325,21 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
                 <input type="number" inputmode="decimal" step="${inputStep(singleUnit, 'set')}" class="input-bar-weight" value="${s.barWeightKg != null ? roundForDisplay(toUnit(s.barWeightKg, singleUnit), 1) : ''}" placeholder="0" />
                 <span class="set-unit">barra ${singleUnit}</span>
               </div>
-              <div class="set-weight-col">
-                <input type="number" inputmode="decimal" step="${inputStep(singleUnit, 'set')}" class="input-plates" value="${s.plateWeightPerSideKg != null ? roundForDisplay(toUnit(s.plateWeightPerSideKg, singleUnit), 1) : ''}" placeholder="0" />
-                <span class="set-unit">disco ${singleUnit}</span>
-              </div>
+              ${dualUnit ? `
+                <div class="set-weight-col">
+                  <input type="number" inputmode="decimal" step="${inputStep('kg', 'set')}" class="input-plates-kgpart" value="${s.plateWeightPerSideKg ?? ''}" placeholder="0" />
+                  <span class="set-unit">disco kg</span>
+                </div>
+                <div class="set-weight-col">
+                  <input type="number" inputmode="decimal" step="${inputStep('lb', 'set')}" class="input-plates-lbpart" value="${s.plateWeightPerSideLbPart ?? ''}" placeholder="0" />
+                  <span class="set-unit">disco lb</span>
+                </div>
+              ` : `
+                <div class="set-weight-col">
+                  <input type="number" inputmode="decimal" step="${inputStep(singleUnit, 'set')}" class="input-plates" value="${s.plateWeightPerSideKg != null ? roundForDisplay(toUnit(s.plateWeightPerSideKg, singleUnit), 1) : ''}" placeholder="0" />
+                  <span class="set-unit">disco ${singleUnit}</span>
+                </div>
+              `}
             </div>
           ` : dualUnit ? `
             <div class="set-field set-weight-dual">
@@ -444,8 +457,10 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       const current = currentSets.find((s) => s.id === setId);
       const barWeightKg = e.target.value === '' ? null : Number(e.target.value);
       const plateWeightPerSideKg = current.plateWeightPerSideKg ?? null;
-      const weight = barWeightKg == null && plateWeightPerSideKg == null ? null : (barWeightKg ?? 0) + 2 * (plateWeightPerSideKg ?? 0);
-      const changes = { weight, barWeightKg, plateWeightPerSideKg, done: deriveDoneOnCommit(current, weight, current.reps) };
+      const plateWeightPerSideLbPart = current.plateWeightPerSideLbPart ?? null;
+      const totalPlatePerSideKg = (plateWeightPerSideKg ?? 0) + toKg(plateWeightPerSideLbPart ?? 0, 'lb');
+      const weight = barWeightKg == null && plateWeightPerSideKg == null && plateWeightPerSideLbPart == null ? null : (barWeightKg ?? 0) + 2 * totalPlatePerSideKg;
+      const changes = { weight, barWeightKg, plateWeightPerSideKg, plateWeightPerSideLbPart, done: deriveDoneOnCommit(current, weight, current.reps) };
       await repo.updateSet(setId, changes);
       await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
     });
@@ -480,24 +495,48 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     const soloInput = row.querySelector('.input-weight');
     const barWeightInput = row.querySelector('.input-bar-weight');
     const platesInput = row.querySelector('.input-plates');
+    const platesKgPartInput = row.querySelector('.input-plates-kgpart');
+    const platesLbPartInput = row.querySelector('.input-plates-lbpart');
 
-    if (barWeightInput && platesInput) {
+    if (barWeightInput && (platesInput || (platesKgPartInput && platesLbPartInput))) {
       async function commitBarbell() {
         const current = currentSets.find((s) => s.id === setId);
         const barRaw = barWeightInput.value;
-        const platesRaw = platesInput.value;
-        if (barRaw === '' && platesRaw === '') {
-          await repo.updateSet(setId, { weight: null, barWeightKg: null, plateWeightPerSideKg: null, done: false });
+        // Discos: en modo unidad única es UN valor (convertido a kg); en modo
+        // kg+lb son dos componentes que se SUMAN (discos grandes en kg +
+        // discos pequeños fraccionarios en lb), igual que weightKgPart/
+        // weightLbPart del peso normal — nunca una conversión del mismo número.
+        let plateWeightPerSideKg = null;
+        let plateWeightPerSideLbPart = null;
+        if (platesInput) {
+          const platesRaw = platesInput.value;
+          plateWeightPerSideKg = platesRaw === '' ? null : toKg(platesRaw, singleUnit);
+        } else {
+          const kgRaw = platesKgPartInput.value;
+          const lbRaw = platesLbPartInput.value;
+          plateWeightPerSideKg = kgRaw === '' ? null : Number(kgRaw);
+          plateWeightPerSideLbPart = lbRaw === '' ? null : Number(lbRaw);
+        }
+        if (barRaw === '' && plateWeightPerSideKg == null && plateWeightPerSideLbPart == null) {
+          await repo.updateSet(setId, { weight: null, barWeightKg: null, plateWeightPerSideKg: null, plateWeightPerSideLbPart: null, done: false });
         } else {
           const barWeightKg = barRaw === '' ? 0 : toKg(barRaw, singleUnit);
-          const plateWeightPerSideKg = platesRaw === '' ? 0 : toKg(platesRaw, singleUnit);
-          const weight = barWeightKg + 2 * plateWeightPerSideKg;
-          await repo.updateSet(setId, { weight, barWeightKg: barRaw === '' ? null : barWeightKg, plateWeightPerSideKg: platesRaw === '' ? null : plateWeightPerSideKg, done: deriveDoneOnCommit(current, weight, current.reps) });
+          const totalPlatePerSideKg = (plateWeightPerSideKg ?? 0) + toKg(plateWeightPerSideLbPart ?? 0, 'lb');
+          const weight = barWeightKg + 2 * totalPlatePerSideKg;
+          await repo.updateSet(setId, {
+            weight,
+            barWeightKg: barRaw === '' ? null : barWeightKg,
+            plateWeightPerSideKg,
+            plateWeightPerSideLbPart,
+            done: deriveDoneOnCommit(current, weight, current.reps),
+          });
         }
         await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
       }
       barWeightInput.addEventListener('blur', commitBarbell);
-      platesInput.addEventListener('blur', commitBarbell);
+      platesInput?.addEventListener('blur', commitBarbell);
+      platesKgPartInput?.addEventListener('blur', commitBarbell);
+      platesLbPartInput?.addEventListener('blur', commitBarbell);
     } else if (kgPartInput && lbPartInput) {
       // kg y lb son componentes que se SUMAN (discos combinados) — cada uno
       // se guarda tal cual se escribe, sin recalcular el otro.
@@ -557,6 +596,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
       weightLbPart: null,
       barWeightKg: defaultBar?.weightKg ?? null,
       plateWeightPerSideKg: null,
+      plateWeightPerSideLbPart: null,
       reps: null,
     });
     await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
@@ -598,8 +638,11 @@ function formatTotal(weightKg, unit) {
 // tener que hacer la conversión mental según qué placas tenga el gimnasio.
 function weightSummary(s) {
   if (s.weight == null) return '—';
-  if (s.barWeightKg != null || s.plateWeightPerSideKg != null) {
-    return `${formatTotal(s.weight, 'kg')} (${roundForDisplay(s.barWeightKg ?? 0, 1)}+${roundForDisplay(s.plateWeightPerSideKg ?? 0, 1)}×2) · ${formatTotal(s.weight, 'lb')}`;
+  if (s.barWeightKg != null || s.plateWeightPerSideKg != null || s.plateWeightPerSideLbPart != null) {
+    const discos = s.plateWeightPerSideLbPart != null
+      ? `${roundForDisplay(s.plateWeightPerSideKg ?? 0, 1)}kg+${roundForDisplay(s.plateWeightPerSideLbPart, 1)}lb`
+      : `${roundForDisplay(s.plateWeightPerSideKg ?? 0, 1)}`;
+    return `${formatTotal(s.weight, 'kg')} (${roundForDisplay(s.barWeightKg ?? 0, 1)}+${discos}×2) · ${formatTotal(s.weight, 'lb')}`;
   }
   if (s.weightKgPart != null && s.weightLbPart != null) {
     return `${s.weightKgPart} kg + ${s.weightLbPart} lb`;

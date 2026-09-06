@@ -161,6 +161,7 @@ create table if not exists sets (
   drop_steps jsonb,
   bar_weight_kg numeric,
   plate_weight_per_side_kg numeric,
+  plate_weight_per_side_lb_part numeric,
   added_weight_kg numeric,
   done boolean default false,
   created_at timestamptz not null default now(),

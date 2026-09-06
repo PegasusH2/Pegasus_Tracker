@@ -59,7 +59,8 @@ const FIELD_MAPS = {
     workoutExerciseId: 'workout_exercise_id', setNumber: 'set_number',
     weightKgPart: 'weight_kg_part', weightLbPart: 'weight_lb_part', restSeconds: 'rest_seconds',
     restPauseExtra: 'rest_pause_extra', dropSteps: 'drop_steps', barWeightKg: 'bar_weight_kg',
-    plateWeightPerSideKg: 'plate_weight_per_side_kg', addedWeightKg: 'added_weight_kg',
+    plateWeightPerSideKg: 'plate_weight_per_side_kg', plateWeightPerSideLbPart: 'plate_weight_per_side_lb_part',
+    addedWeightKg: 'added_weight_kg',
   },
   templates: { order: 'sort_order' },
   templateExercises: {
