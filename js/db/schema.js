@@ -562,7 +562,20 @@ db.version(18).stores({
   nutritionMacroTargets: null,
 });
 
-export const SCHEMA_VERSION = 18;
+// v19: se retira "grupo muscular" de los ejercicios — sin uso real más allá
+// de una etiqueta y del agrupado opcional de "Crear rutina desde cero"
+// (pestaña "Grupos", retirada junto con él). Deja de pedirse/mostrarse en
+// toda la app y se borra el dato ya guardado (decisión explícita del
+// usuario: no solo se deja de leer, se elimina).
+db.version(19).stores({
+  exercises: 'id, name, archived, isFavorite',
+}).upgrade(async (tx) => {
+  await tx.table('exercises').toCollection().modify((row) => {
+    delete row.muscleGroup;
+  });
+});
+
+export const SCHEMA_VERSION = 19;
 
 // Tablas cuyas filas se sincronizan con Supabase cuando hay sesión activa —
 // ver docs/supabase-sync-design.md para la decisión de alcance (exercises/

@@ -41,7 +41,7 @@ export async function renderExerciseDetail(mount, { exerciseId }) {
 
   mount.innerHTML = `
     <h1 class="type-title">${escapeHtml(exercise.name)}</h1>
-    <div class="type-caption text-dim" style="margin-bottom:24px;">${exercise.muscleGroup ? escapeHtml(exercise.muscleGroup) : '&nbsp;'}</div>
+    <div class="type-caption text-dim" style="margin-bottom:24px;">&nbsp;</div>
 
     ${!history.length ? `<div class="empty-state">Todavía no hay sesiones registradas de este ejercicio.</div>` : `
 

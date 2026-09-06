@@ -46,7 +46,6 @@ async function renderList(mount) {
     <div class="grouped-row" data-id="${ex.id}">
       <div style="flex:1; min-width:0;" class="ex-open">
         <div class="type-body" style="font-weight:600; ${ex.archived ? 'opacity:0.45;' : ''}">${escapeHtml(ex.name)}</div>
-        ${ex.muscleGroup ? `<div class="type-caption text-faint">${escapeHtml(ex.muscleGroup)}</div>` : ''}
       </div>
       <button class="btn btn-ghost btn-sm ex-edit">Editar</button>
     </div>
@@ -77,10 +76,6 @@ async function openExerciseForm(mount, existing) {
     <div class="field">
       <label class="label">Nombre</label>
       <input type="text" id="f-name" value="${escapeAttr(existing?.name || '')}" placeholder="Ej. Press banca" autofocus />
-    </div>
-    <div class="field">
-      <label class="label">Grupo muscular (opcional)</label>
-      <input type="text" id="f-muscle" value="${escapeAttr(existing?.muscleGroup || '')}" placeholder="Ej. Pecho" />
     </div>
     <div class="field">
       <label class="label">Tipo de ejercicio</label>
@@ -140,7 +135,6 @@ async function openExerciseForm(mount, existing) {
       sheet.querySelector('#f-save').addEventListener('click', async (e) => {
         const name = sheet.querySelector('#f-name').value.trim();
         if (!name) { toast('El nombre es obligatorio'); return; }
-        const muscleGroup = sheet.querySelector('#f-muscle').value.trim();
         const notes = sheet.querySelector('#f-notes').value.trim();
         const newEquipmentType = sheet.querySelector('#f-equipment .seg.active')?.dataset.equipment ?? 'other';
         const defaultBarId = newEquipmentType === 'barbell' ? (sheet.querySelector('#f-bar').value || null) : null;
@@ -157,9 +151,9 @@ async function openExerciseForm(mount, existing) {
         btn.disabled = true;
         try {
           if (isEdit) {
-            await repo.updateExercise(existing.id, { name, muscleGroup, notes, loadMode, equipmentType: newEquipmentType, defaultBarId });
+            await repo.updateExercise(existing.id, { name, notes, loadMode, equipmentType: newEquipmentType, defaultBarId });
           } else {
-            await repo.createExercise({ name, muscleGroup, notes, loadMode, equipmentType: newEquipmentType, defaultBarId });
+            await repo.createExercise({ name, notes, loadMode, equipmentType: newEquipmentType, defaultBarId });
           }
           close();
           await renderList(mount);

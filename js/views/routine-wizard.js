@@ -1,6 +1,6 @@
 // Asistente de creación manual de rutinas — 3 pasos: 1) nombre/descripción/
 // icono, 2) elegir ejercicios (selección múltiple, con pestañas Todos/
-// Favoritos/Recientes/Grupos), 3) revisar orden y guardar. Usa exactamente
+// Favoritos/Recientes), 3) revisar orden y guardar. Usa exactamente
 // las mismas funciones de repository.js que cualquier otra rutina
 // (createTemplate/addTemplateExercise) — nada paralelo.
 import * as repo from '../db/repository.js';
@@ -78,7 +78,6 @@ const TABS = [
   { key: 'todos', label: 'Todos' },
   { key: 'favoritos', label: 'Favoritos' },
   { key: 'recientes', label: 'Recientes' },
-  { key: 'grupos', label: 'Grupos' },
 ];
 
 async function renderStep2(mount, state) {
@@ -122,7 +121,7 @@ async function loadExercisesForTab(state) {
   }
   const all = await repo.listExercises({ search: state.search });
   if (state.tab === 'favoritos') return all.filter((e) => e.isFavorite);
-  return all; // 'todos' y 'grupos' parten de la misma lista, 'grupos' solo cambia cómo se agrupa
+  return all;
 }
 
 async function renderExerciseList(mount, state) {
@@ -134,20 +133,7 @@ async function renderExerciseList(mount, state) {
     return;
   }
 
-  if (state.tab === 'grupos') {
-    const groups = new Map();
-    for (const ex of exercises) {
-      const key = ex.muscleGroup?.trim() || 'Sin grupo';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(ex);
-    }
-    list.innerHTML = [...groups.entries()].map(([group, items]) => `
-      <div class="section-label" style="margin-top:var(--space-3);">${escapeHtml(group)}</div>
-      <div class="grouped-list">${items.map((ex) => exerciseRowHtml(ex, state)).join('')}</div>
-    `).join('');
-  } else {
-    list.innerHTML = `<div class="grouped-list">${exercises.map((ex) => exerciseRowHtml(ex, state)).join('')}</div>`;
-  }
+  list.innerHTML = `<div class="grouped-list">${exercises.map((ex) => exerciseRowHtml(ex, state)).join('')}</div>`;
 
   bindExerciseRows(list, mount, state);
 }
@@ -161,7 +147,6 @@ function exerciseRowHtml(ex, state) {
       </button>
       <div style="flex:1; min-width:0;" class="rw-toggle" data-id="${ex.id}">
         <div class="type-body" style="font-weight:600;">${escapeHtml(ex.name)}</div>
-        ${ex.muscleGroup ? `<div class="type-caption text-faint">${escapeHtml(ex.muscleGroup)}</div>` : ''}
       </div>
       <span class="set-check ${isSelected ? 'done' : ''}" style="flex-shrink:0;">${isSelected ? ACTION_ICONS.check : ''}</span>
     </div>
@@ -201,18 +186,13 @@ function openCreateExerciseSheet(mount, state) {
       <label class="label">Nombre</label>
       <input type="text" id="new-ex-name" autofocus />
     </div>
-    <div class="field">
-      <label class="label">Grupo muscular (opcional)</label>
-      <input type="text" id="new-ex-muscle" />
-    </div>
     <button class="btn btn-primary btn-block" id="new-ex-save">Crear y añadir</button>
   `, {
     onMount: (sheet, close) => {
       sheet.querySelector('#new-ex-save').addEventListener('click', async () => {
         const name = sheet.querySelector('#new-ex-name').value.trim();
         if (!name) { toast('El nombre es obligatorio'); return; }
-        const muscleGroup = sheet.querySelector('#new-ex-muscle').value.trim();
-        const exercise = await repo.createExercise({ name, muscleGroup });
+        const exercise = await repo.createExercise({ name });
         state.selected.push({ exercise });
         close();
         renderExerciseList(mount, state);
@@ -223,16 +203,15 @@ function openCreateExerciseSheet(mount, state) {
   });
 }
 
-// Alta rápida de varios ejercicios nuevos a la vez — un nombre por línea,
-// con el grupo muscular opcional tras un guion (ej. "Sentadilla - Pierna").
+// Alta rápida de varios ejercicios nuevos a la vez — un nombre por línea.
 // Todos se crean como ejercicios reales de la biblioteca y se añaden ya
 // seleccionados a la rutina, en el mismo orden en que se escribieron.
 function openBulkCreateExerciseSheet(mount, state) {
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:8px;">Dar de alta varios ejercicios</h3>
-    <p class="type-caption text-faint" style="margin-bottom:12px;">Uno por línea. Añade el grupo muscular opcionalmente después de un guion — ej. "Sentadilla - Pierna".</p>
+    <p class="type-caption text-faint" style="margin-bottom:12px;">Uno por línea.</p>
     <div class="field">
-      <textarea id="bulk-ex-names" rows="6" placeholder="Press banca - Pecho&#10;Sentadilla - Pierna&#10;Dominadas" autofocus></textarea>
+      <textarea id="bulk-ex-names" rows="6" placeholder="Press banca&#10;Sentadilla&#10;Dominadas" autofocus></textarea>
     </div>
     <button class="btn btn-primary btn-block" id="bulk-ex-save">Crear y añadir todos</button>
   `, {
@@ -243,12 +222,9 @@ function openBulkCreateExerciseSheet(mount, state) {
         if (!lines.length) { toast('Escribe al menos un ejercicio'); return; }
 
         let created = 0;
-        for (const line of lines) {
-          const [namePart, ...rest] = line.split(' - ');
-          const name = namePart.trim();
+        for (const name of lines) {
           if (!name) continue;
-          const muscleGroup = rest.join(' - ').trim();
-          const exercise = await repo.createExercise({ name, muscleGroup });
+          const exercise = await repo.createExercise({ name });
           state.selected.push({ exercise });
           created++;
         }

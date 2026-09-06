@@ -47,7 +47,7 @@ const TABLE_TO_SQL = {
 // camelCase y snake_case coinciden, ej. name/date/weight/reps/archived) —
 // ver camelToSnake/snakeToCamel más abajo para el resto.
 const FIELD_MAPS = {
-  exercises: { muscleGroup: 'muscle_group', loadMode: 'load_mode', equipmentType: 'equipment_type', defaultBarId: 'default_bar_id', isFavorite: 'is_favorite' },
+  exercises: { loadMode: 'load_mode', equipmentType: 'equipment_type', defaultBarId: 'default_bar_id', isFavorite: 'is_favorite' },
   workouts: { templateId: 'template_id' },
   workoutExercises: {
     workoutId: 'workout_id', exerciseId: 'exercise_id', order: 'sort_order',
@@ -320,7 +320,7 @@ async function enqueueOrphanedExerciseStubs() {
   const now = new Date().toISOString();
   for (const id of referenced) {
     await repo.enqueueCreate('exercises', {
-      id, name: 'Ejercicio eliminado', muscleGroup: '', notes: '', loadMode: 'total',
+      id, name: 'Ejercicio eliminado', notes: '', loadMode: 'total',
       equipmentType: 'other', defaultBarId: null, archived: true, isFavorite: false,
       createdAt: now, updatedAt: now, deletedAt: now,
     });

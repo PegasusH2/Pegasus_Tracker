@@ -184,18 +184,13 @@ export function openExercisePickerSheet({ onSelect, title = 'Añadir ejercicio',
             <label class="label">Nombre</label>
             <input type="text" id="new-ex-name" value="${escapeHtml(name)}" autofocus />
           </div>
-          <div class="field">
-            <label class="label">Grupo muscular (opcional)</label>
-            <input type="text" id="new-ex-muscle" />
-          </div>
           <button class="btn btn-primary btn-block" id="new-ex-save">Crear y añadir</button>
         `, {
           onMount: (sheet2, close2) => {
             sheet2.querySelector('#new-ex-save').addEventListener('click', async () => {
               const n = sheet2.querySelector('#new-ex-name').value.trim();
               if (!n) { toast('El nombre es obligatorio'); return; }
-              const muscleGroup = sheet2.querySelector('#new-ex-muscle').value.trim();
-              const ex = await repo.createExercise({ name: n, muscleGroup });
+              const ex = await repo.createExercise({ name: n });
               close2();
               close();
               await onSelect(ex);

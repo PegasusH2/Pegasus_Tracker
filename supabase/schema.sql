@@ -57,7 +57,6 @@ create table if not exists exercises (
   user_id uuid not null references auth.users(id) on delete cascade,
   device_id text,
   name text not null,
-  muscle_group text default '',
   notes text default '',
   load_mode text default 'total',
   equipment_type text default 'other',
