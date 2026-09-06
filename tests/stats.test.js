@@ -37,6 +37,25 @@ describe('bestRecordsFromHistory', () => {
     const records = bestRecordsFromHistory(history);
     assert.equal(records.bestWeight, null);
   });
+
+  test('peso 0 (serie AMRAP sin rellenar, primera vez con el ejercicio) no cuenta como PR de peso ni 1RM, pero sí de reps', () => {
+    const history = [{ workout: { date: '2026-01-01' }, sets: [{ weight: 0, reps: 6 }] }];
+    const records = bestRecordsFromHistory(history);
+    assert.equal(records.bestWeight, null);
+    assert.equal(records.bestWeightEntry, null);
+    assert.equal(records.best1RM, null);
+    assert.equal(records.bestReps, 6);
+  });
+
+  test('un peso real posterior sí cuenta como PR aunque haya series con peso 0 antes', () => {
+    const history = [
+      { workout: { date: '2026-01-01' }, sets: [{ weight: 0, reps: 6 }] },
+      { workout: { date: '2026-01-08' }, sets: [{ weight: 20, reps: 6 }] },
+    ];
+    const records = bestRecordsFromHistory(history);
+    assert.equal(records.bestWeight, 20);
+    assert.equal(records.bestWeightEntry.date, '2026-01-08');
+  });
 });
 
 describe('trendSeries', () => {

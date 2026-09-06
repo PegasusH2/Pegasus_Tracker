@@ -21,18 +21,24 @@ export function bestRecordsFromHistory(history, { loadMode = 'total' } = {}) {
       if (s.weight == null || s.reps == null) continue;
       sessionVol += effectiveSetVolume(s, { loadMode });
 
-      if (bestWeight == null || s.weight > bestWeight) {
-        bestWeight = s.weight;
-        bestWeightEntry = { date: entry.workout.date, set: s };
+      // weight === 0 no es un peso REGISTRADO (es el valor por defecto de una
+      // serie que se ha marcado hecha sin rellenar el peso, p.ej. AMRAP a
+      // peso corporal) — no debe contar como marca de peso ni de 1RM, aunque
+      // sí como marca de repeticiones (bestReps, que no depende del peso).
+      if (s.weight > 0) {
+        if (bestWeight == null || s.weight > bestWeight) {
+          bestWeight = s.weight;
+          bestWeightEntry = { date: entry.workout.date, set: s };
+        }
+        const rm = estimate1RM(s.weight, s.reps);
+        if (rm != null && (best1RM == null || rm > best1RM)) {
+          best1RM = rm;
+          best1RMEntry = { date: entry.workout.date, set: s };
+        }
       }
       if (bestReps == null || s.reps > bestReps) {
         bestReps = s.reps;
         bestRepsEntry = { date: entry.workout.date, set: s };
-      }
-      const rm = estimate1RM(s.weight, s.reps);
-      if (rm != null && (best1RM == null || rm > best1RM)) {
-        best1RM = rm;
-        best1RMEntry = { date: entry.workout.date, set: s };
       }
     }
     if (sessionVol > 0 && (bestVolumeSession == null || sessionVol > bestVolumeSession)) {
