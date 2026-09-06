@@ -41,7 +41,13 @@ const NUTRICION_SECTION_LABELS = {
   historico: 'Histórico',
 };
 
+// Solicitud pendiente de un entrenador — invitar/gestionar clientes es cosa
+// de Pegasus Coach, pero aceptar/rechazar debe poder hacerse aunque el
+// cliente solo tenga Tracker instalado (ver js/core/pegasus-nutrition.js).
+let pendingTrainerRequests = [];
+
 export async function renderSettingsHub(mount) {
+  pendingTrainerRequests = isSupabaseConfigured() ? await pegasus.pegasusListPendingTrainerRequests() : [];
   render(mount);
 }
 
@@ -50,6 +56,21 @@ function render(mount) {
   const name = settings.getUserName();
   mount.innerHTML = `
     <h1 class="type-title" style="margin-bottom:var(--space-5);">Ajustes</h1>
+
+    ${pendingTrainerRequests.length > 0 ? `
+      <div class="card" style="margin-bottom:var(--space-5); border:1px solid var(--accent);">
+        <div class="type-headline" style="margin-bottom:6px;">Solicitud de entrenador</div>
+        ${pendingTrainerRequests.map((r) => `
+          <div style="margin-bottom:var(--space-3);">
+            <p class="type-body text-dim" style="margin-bottom:var(--space-2);">${escapeHtml(r.trainerNombre || 'Un entrenador')} quiere ver tu progreso y gestionar tu planificación.</p>
+            <div class="row" style="gap:8px;">
+              <button class="btn btn-primary" style="flex:1;" data-accept-link="${r.id}">Aceptar</button>
+              <button class="btn btn-secondary" style="flex:1;" data-reject-link="${r.id}">Rechazar</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
 
     <div class="grouped-list" style="margin-bottom:var(--space-5);">
       <div class="grouped-row" id="row-perfil" style="cursor:pointer;">
@@ -109,6 +130,30 @@ function render(mount) {
   mount.querySelector('#row-nutricion-tipo')?.addEventListener('click', () => openNutricionTipoSheet(mount));
   mount.querySelector('#row-cuenta')?.addEventListener('click', () => navigate('/ajustes/cuenta'));
   mount.querySelector('#row-dev')?.addEventListener('click', () => openDevModeSheet(mount));
+
+  mount.querySelectorAll('[data-accept-link]').forEach((btn) => {
+    btn.addEventListener('click', () => respondTrainerRequest(mount, btn, btn.dataset.acceptLink, true));
+  });
+  mount.querySelectorAll('[data-reject-link]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const ok = await openConfirmSheet('¿Rechazar esta solicitud de entrenador?', { confirmLabel: 'Rechazar' });
+      if (!ok) return;
+      respondTrainerRequest(mount, btn, btn.dataset.rejectLink, false);
+    });
+  });
+}
+
+async function respondTrainerRequest(mount, btn, linkId, accept) {
+  btn.disabled = true;
+  try {
+    await pegasus.pegasusRespondToTrainerRequest(linkId, accept);
+    pendingTrainerRequests = pendingTrainerRequests.filter((r) => r.id !== linkId);
+    toast(accept ? 'Solicitud aceptada' : 'Solicitud rechazada');
+    render(mount);
+  } catch (err) {
+    toast(err.message || 'No se pudo responder a la solicitud');
+    btn.disabled = false;
+  }
 }
 
 // Modo desarrollador — inicia sesión con la contraseña de administrador

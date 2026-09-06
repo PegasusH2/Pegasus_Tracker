@@ -161,6 +161,51 @@ export async function pegasusGetTrainerLink() {
 }
 
 // ---------------------------------------------------------------------
+// Vínculo con entrenador — responder (aceptar/rechazar) una solicitud
+// pendiente. Invitar y gestionar clientes es cosa de Pegasus Coach; esto es
+// lo mínimo para que un cliente que solo use Tracker pueda aceptar sin
+// necesitar instalar Coach (mismo patrón que trainerRepo.ts#respondToRequest
+// en Coach, misma tabla trainer_client_links, mismas policies RLS).
+// ---------------------------------------------------------------------
+export async function pegasusListPendingTrainerRequests() {
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+  const user = await getUser();
+  if (!user) return [];
+  try {
+    const { data, error } = await supabase
+      .from('trainer_client_links')
+      .select('id, trainerId, status, createdAt')
+      .eq('clientId', user.id)
+      .eq('status', 'pending')
+      .order('createdAt', { ascending: false });
+    if (error) throw error;
+    const rows = data ?? [];
+    const trainerIds = [...new Set(rows.map((r) => r.trainerId))];
+    const nombreById = new Map();
+    if (trainerIds.length > 0) {
+      const { data: profiles } = await supabase.from('profiles').select('id, nombre').in('id', trainerIds);
+      for (const p of profiles ?? []) nombreById.set(p.id, p.nombre);
+    }
+    return rows.map((r) => ({ ...r, trainerNombre: nombreById.get(r.trainerId) || null }));
+  } catch (err) {
+    console.warn('No se pudo comprobar solicitudes de entrenador', err);
+    return [];
+  }
+}
+
+export async function pegasusRespondToTrainerRequest(linkId, accept) {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error('La sincronización no está configurada');
+  await requireUser();
+  const { error } = await supabase
+    .from('trainer_client_links')
+    .update({ status: accept ? 'accepted' : 'revoked', respondedAt: new Date().toISOString() })
+    .eq('id', linkId);
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------
 // Dieta cerrada — mismo patrón que los macros: lecturas silenciosas,
 // escrituras que lanzan. planId/items usan las columnas exactas del
 // esquema real de Nutrition (ver nutrition_closed_diet_plan/_item).
