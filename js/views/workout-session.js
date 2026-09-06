@@ -375,7 +375,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
         Total <button type="button" class="set-total-toggle" data-weight-kg="${s.weight}" data-unit="${defaultUnit}">${formatTotal(s.weight, defaultUnit)}</button>
       </div>
     ` : ''}
-    ${renderSetExtraBlock(s, singleUnit)}
+    ${renderSetExtraBlock(s, singleUnit, dualUnit)}
     </div>
   `;
   }).join('');
@@ -424,6 +424,26 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     });
   });
 
+  setsList.querySelectorAll('.set-step-weight-kgpart, .set-step-weight-lbpart').forEach((input) => {
+    input.addEventListener('blur', async (e) => {
+      const row = e.target.closest('.set-extra-row');
+      const setId = row.dataset.setId;
+      const current = currentSets.find((s) => s.id === setId);
+      const steps = (current.dropSteps ?? []).map((s) => ({ ...s }));
+      const idx = Number(e.target.dataset.idx);
+      const isKgPart = e.target.classList.contains('set-step-weight-kgpart');
+      const raw = e.target.value;
+      const numValue = raw === '' ? null : Number(raw);
+      const step = { ...steps[idx], [isKgPart ? 'weightKgPart' : 'weightLbPart']: numValue };
+      step.weight = (step.weightKgPart == null && step.weightLbPart == null)
+        ? null
+        : (step.weightKgPart ?? 0) + toKg(step.weightLbPart ?? 0, 'lb');
+      steps[idx] = step;
+      await repo.updateSet(setId, { dropSteps: steps });
+      await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+    });
+  });
+
   setsList.querySelectorAll('.set-step-remove').forEach((btn) => {
     btn.addEventListener('click', async (e) => {
       const row = e.target.closest('.set-extra-row');
@@ -444,7 +464,7 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
         const blocks = [...(current.restPauseExtra ?? []), { reps: null }];
         await repo.updateSet(setId, { restPauseExtra: blocks });
       } else {
-        const steps = [...(current.dropSteps ?? []).map((s) => ({ ...s })), { weight: null, reps: null }];
+        const steps = [...(current.dropSteps ?? []).map((s) => ({ ...s })), { weight: null, weightKgPart: null, weightLbPart: null, reps: null }];
         await repo.updateSet(setId, { dropSteps: steps });
       }
       await renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
@@ -857,9 +877,13 @@ function openSetTypeSheet(currentType, onSelect) {
 
 // Bloques extra de una técnica especial, más allá del bloque principal
 // (weight/reps de la propia serie): rest-pause suma reps con el mismo peso;
-// descendente añade escalones con su propio peso. unit: kg o lb en la que se
-// muestran/editan los escalones (dropSteps.weight se guarda siempre en kg).
-function renderSetExtraBlock(s, unit = 'kg') {
+// descendente añade descendientes con su propio peso. unit: kg o lb en la que
+// se muestran/editan cuando solo hay una unidad activa; con dualUnit (kg y lb
+// activos en Ajustes > Pesos) cada descendiente admite un componente en kg y
+// otro en lb que se SUMAN — igual que weightKgPart/weightLbPart de la propia
+// serie — en vez de forzar una sola unidad (dropSteps[].weight se guarda
+// siempre en kg, weightKgPart/weightLbPart son solo los componentes).
+function renderSetExtraBlock(s, unit = 'kg', dualUnit = false) {
   if (s.type === 'restpause') {
     const blocks = s.restPauseExtra ?? [];
     return `
@@ -875,17 +899,22 @@ function renderSetExtraBlock(s, unit = 'kg') {
     const steps = s.dropSteps ?? [];
     return `
       <div class="set-extra-row set-extra-row--steps" data-set-id="${s.id}" data-kind="descendente">
-        <span class="set-extra-label">↓ escalones</span>
+        <span class="set-extra-label">↓ descendientes</span>
         <div class="set-extra-steps">
           ${steps.map((step, i) => `
             <span class="set-step" data-idx="${i}">
-              <input type="number" inputmode="decimal" class="set-step-weight" data-idx="${i}" value="${step.weight != null ? roundForDisplay(toUnit(step.weight, unit), 1) : ''}" placeholder="${unit}" />
+              ${dualUnit ? `
+                <input type="number" inputmode="decimal" class="set-step-weight-kgpart" data-idx="${i}" value="${step.weightKgPart ?? ''}" placeholder="kg" />
+                <input type="number" inputmode="decimal" class="set-step-weight-lbpart" data-idx="${i}" value="${step.weightLbPart ?? ''}" placeholder="lb" />
+              ` : `
+                <input type="number" inputmode="decimal" class="set-step-weight" data-idx="${i}" value="${step.weight != null ? roundForDisplay(toUnit(step.weight, unit), 1) : ''}" placeholder="${unit}" />
+              `}
               <span class="set-step-x">×</span>
               <input type="number" inputmode="numeric" class="set-step-reps" data-idx="${i}" value="${step.reps ?? ''}" placeholder="reps" />
               <button type="button" class="set-step-remove" data-idx="${i}">✕</button>
             </span>
           `).join('')}
-          <button type="button" class="set-extra-add" data-kind="descendente">+ escalón</button>
+          <button type="button" class="set-extra-add" data-kind="descendente">+ descendente</button>
         </div>
       </div>`;
   }

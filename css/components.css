@@ -246,7 +246,7 @@
   border-radius: var(--radius-sm);
   padding: 3px 6px;
 }
-.set-step-weight, .set-step-reps {
+.set-step-weight, .set-step-weight-kgpart, .set-step-weight-lbpart, .set-step-reps {
   width: 40px;
   text-align: center;
   background: transparent;
