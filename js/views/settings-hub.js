@@ -46,8 +46,15 @@ const NUTRICION_SECTION_LABELS = {
 // cliente solo tenga Tracker instalado (ver js/core/pegasus-nutrition.js).
 let pendingTrainerRequests = [];
 
+// Identidad básica (fecha de nacimiento/altura/sexo) — null si no hay sesión
+// o falló la carga; { fechaNacimiento, altura, sexo } (con nulls) si hay
+// sesión, aunque los 3 campos estén todavía vacíos. Ver
+// js/core/pegasus-nutrition.js#pegasusGetIdentidad.
+let identidad = null;
+
 export async function renderSettingsHub(mount) {
   pendingTrainerRequests = isSupabaseConfigured() ? await pegasus.pegasusListPendingTrainerRequests() : [];
+  identidad = isSupabaseConfigured() ? await pegasus.pegasusGetIdentidad() : null;
   render(mount);
 }
 
@@ -144,6 +151,11 @@ function render(mount) {
 }
 
 async function respondTrainerRequest(mount, btn, linkId, accept) {
+  if (accept && !pegasus.identidadCompleta(identidad)) {
+    toast('Completa tu perfil (fecha de nacimiento, altura y sexo) antes de aceptar');
+    openPerfilSheet(mount);
+    return;
+  }
   btn.disabled = true;
   try {
     await pegasus.pegasusRespondToTrainerRequest(linkId, accept);
@@ -239,18 +251,53 @@ function paintDevModeSheet(box, close, mount) {
 }
 
 function openPerfilSheet(mount) {
+  const idn = identidad; // { fechaNacimiento, altura, sexo } | null — null = sin sesión
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:20px;">Perfil</h3>
     <div class="field">
       <label class="label">Nombre</label>
       <input type="text" id="p-name" value="${escapeHtml(settings.getUserName())}" autofocus />
     </div>
+    ${idn ? `
+      <div class="field">
+        <label class="label">Fecha de nacimiento</label>
+        <input type="date" id="p-fecha-nacimiento" value="${idn.fechaNacimiento ?? ''}" />
+      </div>
+      <div class="field">
+        <label class="label">Altura</label>
+        <input type="number" inputmode="decimal" id="p-altura" placeholder="cm" value="${idn.altura ?? ''}" />
+      </div>
+      <div class="field">
+        <label class="label">Sexo</label>
+        <select id="p-sexo">
+          <option value="">—</option>
+          ${Object.entries(pegasus.SEXO_LABELS).map(([value, label]) => `<option value="${value}" ${idn.sexo === value ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </div>
+      <p class="type-caption text-faint" style="margin-bottom:var(--space-4);">Estos 3 datos hacen falta para poder aceptar la vinculación con un entrenador.</p>
+    ` : ''}
     <button class="btn btn-primary btn-block" id="p-save">Guardar</button>
   `, {
     onMount: (sheet, close) => {
       sheet.querySelector('#p-save').addEventListener('click', async () => {
+        const saveBtn = sheet.querySelector('#p-save');
         const name = sheet.querySelector('#p-name').value.trim();
         await settings.setUserName(name);
+        if (idn) {
+          const fechaNacimiento = sheet.querySelector('#p-fecha-nacimiento').value || null;
+          const alturaRaw = sheet.querySelector('#p-altura').value;
+          const altura = alturaRaw ? Number(alturaRaw) : null;
+          const sexo = sheet.querySelector('#p-sexo').value || null;
+          saveBtn.disabled = true;
+          try {
+            await pegasus.pegasusUpdateIdentidad({ fechaNacimiento, altura, sexo });
+            identidad = { fechaNacimiento, altura, sexo };
+          } catch (err) {
+            toast(err.message || 'No se pudo guardar el perfil');
+            saveBtn.disabled = false;
+            return;
+          }
+        }
         close();
         render(mount);
       });

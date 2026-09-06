@@ -18,6 +18,7 @@
 // según el esquema real (columna nullable, ON DELETE SET NULL).
 import { getSupabaseClient } from './supabase-client.js';
 import { getUser } from './auth.js';
+import { isValidDateString, requirePositiveNumber } from './validate.js';
 
 const TABLE = 'nutrition_macro_plan';
 const CLOSED_DIET_PLAN_TABLE = 'nutrition_closed_diet_plan';
@@ -198,6 +199,13 @@ export async function pegasusRespondToTrainerRequest(linkId, accept) {
   const supabase = getSupabaseClient();
   if (!supabase) throw new Error('La sincronización no está configurada');
   await requireUser();
+  // Aceptar exige fecha de nacimiento/altura/sexo completos (ver
+  // pegasusGetIdentidad/identidadCompleta arriba) — rechazar no los necesita,
+  // así que solo se comprueba en esta rama. Enforced aquí (no solo en la UI)
+  // para que ningún otro llamador futuro pueda saltárselo.
+  if (accept && !identidadCompleta(await pegasusGetIdentidad())) {
+    throw new Error('Completa tu perfil (fecha de nacimiento, altura y sexo) antes de aceptar');
+  }
   const { error } = await supabase
     .from('trainer_client_links')
     .update({ status: accept ? 'accepted' : 'revoked', respondedAt: new Date().toISOString() })
@@ -285,4 +293,77 @@ export async function pegasusReplaceClosedDietItems(planId, items) {
     .from(CLOSED_DIET_ITEM_TABLE)
     .insert(items.map((item) => ({ ...item, planId })));
   if (insertError) throw insertError;
+}
+
+// ---------------------------------------------------------------------
+// Identidad básica (profiles.fechaNacimiento/altura/sexo) — mismos 3 campos
+// que gestiona Pegasus Coach en Ajustes > Perfil (ver
+// Pegasus_Coach/supabase/migrations/0010_identidad_basica.sql), aquí para
+// que una cuenta que solo use Tracker también pueda rellenarlos: se exigen
+// completos antes de poder aceptar una vinculación con un entrenador (ver
+// pegasusRespondToTrainerRequest más abajo y settings-hub.js).
+// ---------------------------------------------------------------------
+export const SEXO_LABELS = {
+  mujer: 'Mujer',
+  hombre: 'Hombre',
+  otro: 'Otro',
+  prefiero_no_decir: 'Prefiero no decirlo',
+};
+
+export async function pegasusGetIdentidad() {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+  const user = await getUser();
+  if (!user) return null;
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('fechaNacimiento, altura, sexo')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (error) throw error;
+    // Sin fila en `profiles` todavía (cuenta que solo ha usado Tracker, ver
+    // find_profile_by_email en Pegasus_Coach/supabase/migrations/0002_invite_tracker_users.sql)
+    // — se trata igual que "fila con los 3 campos vacíos", nunca como "sin sesión".
+    return data ?? { fechaNacimiento: null, altura: null, sexo: null };
+  } catch (err) {
+    console.warn('No se pudo cargar la identidad básica del perfil', err);
+    return null;
+  }
+}
+
+export function identidadCompleta(identidad) {
+  return !!(identidad && identidad.fechaNacimiento && identidad.altura != null && identidad.sexo);
+}
+
+export async function pegasusUpdateIdentidad({ fechaNacimiento, altura, sexo }) {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error('La sincronización no está configurada');
+  const user = await requireUser();
+
+  if (fechaNacimiento != null) {
+    if (!isValidDateString(fechaNacimiento)) throw new Error('La fecha de nacimiento no es válida');
+    if (fechaNacimiento > new Date().toISOString().slice(0, 10)) throw new Error('La fecha de nacimiento no puede ser futura');
+  }
+  if (altura != null) requirePositiveNumber(altura, 'La altura');
+  if (sexo != null && !(sexo in SEXO_LABELS)) throw new Error('Sexo no válido');
+
+  const { data: existing, error: readError } = await supabase.from('profiles').select('id').eq('id', user.id).maybeSingle();
+  if (readError) throw readError;
+
+  if (existing) {
+    const { error } = await supabase.from('profiles').update({ fechaNacimiento, altura, sexo }).eq('id', user.id);
+    if (error) throw error;
+  } else {
+    // role se fija a 'personal' solo al CREAR la fila — inmutable después
+    // (trigger profiles_role_immutable en Coach), y siempre correcto para
+    // una cuenta que nunca gestiona clientes desde Tracker. Por eso el
+    // camino de actualización (arriba) nunca toca `role`: si esta cuenta ya
+    // tuviera fila con role='entrenador' (creada desde Coach), un upsert que
+    // reenviara role='personal' rompería ese trigger.
+    const { error } = await supabase
+      .from('profiles')
+      .insert({ id: user.id, role: 'personal', email: user.email ?? null, fechaNacimiento, altura, sexo });
+    if (error) throw error;
+  }
 }
