@@ -137,6 +137,7 @@ create table if not exists workout_exercises (
   target_rest_seconds integer,
   target_reps_sequence jsonb,
   target_weight_sequence jsonb,
+  target_weight_kg numeric,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
