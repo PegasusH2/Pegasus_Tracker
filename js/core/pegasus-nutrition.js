@@ -296,11 +296,15 @@ export async function pegasusReplaceClosedDietItems(planId, items) {
 }
 
 // ---------------------------------------------------------------------
-// Identidad básica (profiles.fechaNacimiento/altura/sexo) — mismos 3 campos
-// que gestiona Pegasus Coach en Ajustes > Perfil (ver
-// Pegasus_Coach/supabase/migrations/0010_identidad_basica.sql), aquí para
-// que una cuenta que solo use Tracker también pueda rellenarlos: se exigen
-// completos antes de poder aceptar una vinculación con un entrenador (ver
+// Identidad básica (profiles.nombre/fechaNacimiento/altura/sexo) — mismos
+// campos que gestiona Pegasus Coach en Ajustes > Perfil (ver
+// Pegasus_Coach/supabase/migrations/0010_identidad_basica.sql). `nombre`
+// existía ya en Tracker como `settings.userName`, pero puramente local — sin
+// esto, el mismo cliente podía mostrar un nombre distinto en cada app.
+// Aquí se unifica: `profiles.nombre` es el valor canónico en cuanto hay
+// sesión (ver settings-hub.js#renderSettingsHub, que reconcilia el local con
+// este al abrir Ajustes), y fechaNacimiento/altura/sexo se exigen completos
+// antes de poder aceptar una vinculación con un entrenador (ver
 // pegasusRespondToTrainerRequest más abajo y settings-hub.js).
 // ---------------------------------------------------------------------
 export const SEXO_LABELS = {
@@ -318,14 +322,14 @@ export async function pegasusGetIdentidad() {
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('fechaNacimiento, altura, sexo')
+      .select('nombre, fechaNacimiento, altura, sexo')
       .eq('id', user.id)
       .maybeSingle();
     if (error) throw error;
     // Sin fila en `profiles` todavía (cuenta que solo ha usado Tracker, ver
     // find_profile_by_email en Pegasus_Coach/supabase/migrations/0002_invite_tracker_users.sql)
-    // — se trata igual que "fila con los 3 campos vacíos", nunca como "sin sesión".
-    return data ?? { fechaNacimiento: null, altura: null, sexo: null };
+    // — se trata igual que "fila con los 4 campos vacíos", nunca como "sin sesión".
+    return data ?? { nombre: '', fechaNacimiento: null, altura: null, sexo: null };
   } catch (err) {
     console.warn('No se pudo cargar la identidad básica del perfil', err);
     return null;
@@ -336,7 +340,7 @@ export function identidadCompleta(identidad) {
   return !!(identidad && identidad.fechaNacimiento && identidad.altura != null && identidad.sexo);
 }
 
-export async function pegasusUpdateIdentidad({ fechaNacimiento, altura, sexo }) {
+export async function pegasusUpdateIdentidad({ nombre, fechaNacimiento, altura, sexo }) {
   const supabase = getSupabaseClient();
   if (!supabase) throw new Error('La sincronización no está configurada');
   const user = await requireUser();
@@ -352,7 +356,7 @@ export async function pegasusUpdateIdentidad({ fechaNacimiento, altura, sexo }) 
   if (readError) throw readError;
 
   if (existing) {
-    const { error } = await supabase.from('profiles').update({ fechaNacimiento, altura, sexo }).eq('id', user.id);
+    const { error } = await supabase.from('profiles').update({ nombre, fechaNacimiento, altura, sexo }).eq('id', user.id);
     if (error) throw error;
   } else {
     // role se fija a 'personal' solo al CREAR la fila — inmutable después
@@ -363,7 +367,7 @@ export async function pegasusUpdateIdentidad({ fechaNacimiento, altura, sexo }) 
     // reenviara role='personal' rompería ese trigger.
     const { error } = await supabase
       .from('profiles')
-      .insert({ id: user.id, role: 'personal', email: user.email ?? null, fechaNacimiento, altura, sexo });
+      .insert({ id: user.id, role: 'personal', email: user.email ?? null, nombre: nombre ?? '', fechaNacimiento, altura, sexo });
     if (error) throw error;
   }
 }

@@ -46,15 +46,22 @@ const NUTRICION_SECTION_LABELS = {
 // cliente solo tenga Tracker instalado (ver js/core/pegasus-nutrition.js).
 let pendingTrainerRequests = [];
 
-// Identidad básica (fecha de nacimiento/altura/sexo) — null si no hay sesión
-// o falló la carga; { fechaNacimiento, altura, sexo } (con nulls) si hay
-// sesión, aunque los 3 campos estén todavía vacíos. Ver
+// Identidad básica (nombre/fecha de nacimiento/altura/sexo) — null si no hay
+// sesión o falló la carga; { nombre, fechaNacimiento, altura, sexo } (con
+// nulls/'') si hay sesión, aunque los campos estén todavía vacíos. Ver
 // js/core/pegasus-nutrition.js#pegasusGetIdentidad.
 let identidad = null;
 
 export async function renderSettingsHub(mount) {
   pendingTrainerRequests = isSupabaseConfigured() ? await pegasus.pegasusListPendingTrainerRequests() : [];
   identidad = isSupabaseConfigured() ? await pegasus.pegasusGetIdentidad() : null;
+  // Unifica el nombre con Pegasus Coach (profiles.nombre): si ya hay uno real
+  // en Supabase y difiere del guardado solo en este dispositivo, este
+  // dispositivo lo adopta. Nunca al revés aquí — guardar en openPerfilSheet
+  // es lo que empuja un nombre editado en Tracker hacia Supabase.
+  if (identidad?.nombre && identidad.nombre !== settings.getUserName()) {
+    await settings.setUserName(identidad.nombre);
+  }
   render(mount);
 }
 
@@ -251,7 +258,7 @@ function paintDevModeSheet(box, close, mount) {
 }
 
 function openPerfilSheet(mount) {
-  const idn = identidad; // { fechaNacimiento, altura, sexo } | null — null = sin sesión
+  const idn = identidad; // { nombre, fechaNacimiento, altura, sexo } | null — null = sin sesión
   openSheet(`
     <h3 class="type-headline" style="margin-bottom:20px;">Perfil</h3>
     <div class="field">
@@ -290,8 +297,10 @@ function openPerfilSheet(mount) {
           const sexo = sheet.querySelector('#p-sexo').value || null;
           saveBtn.disabled = true;
           try {
-            await pegasus.pegasusUpdateIdentidad({ fechaNacimiento, altura, sexo });
-            identidad = { fechaNacimiento, altura, sexo };
+            // nombre va en el mismo guardado para que quede unificado con
+            // Pegasus Coach (profiles.nombre) — ver pegasusUpdateIdentidad.
+            await pegasus.pegasusUpdateIdentidad({ nombre: name, fechaNacimiento, altura, sexo });
+            identidad = { nombre: name, fechaNacimiento, altura, sexo };
           } catch (err) {
             toast(err.message || 'No se pudo guardar el perfil');
             saveBtn.disabled = false;
