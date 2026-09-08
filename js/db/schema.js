@@ -575,7 +575,21 @@ db.version(19).stores({
   });
 });
 
-export const SCHEMA_VERSION = 19;
+// v20: vínculo opcional con el catálogo global de ejercicios, solo texto (ver
+// js/core/exercise-catalog.js y Pegasus_Coach/supabase/migrations/
+// 0014_catalogo_ejercicios.sql) — catalogId identifica la ficha del catálogo
+// de la que se creó este ejercicio (null si es manual). Sin imágenes ni
+// vídeos (decisión explícita: evita la licencia aparte de esa media). No se
+// indexa (no se filtra/busca por él), solo se guarda.
+db.version(20).stores({
+  exercises: 'id, name, archived, isFavorite',
+}).upgrade(async (tx) => {
+  await tx.table('exercises').toCollection().modify((e) => {
+    if (e.catalogId === undefined) e.catalogId = null;
+  });
+});
+
+export const SCHEMA_VERSION = 20;
 
 // Tablas cuyas filas se sincronizan con Supabase cuando hay sesión activa —
 // ver docs/supabase-sync-design.md para la decisión de alcance (exercises/

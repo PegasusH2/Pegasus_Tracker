@@ -140,7 +140,7 @@ export async function getExercise(id) {
   return db.exercises.get(id);
 }
 
-export async function createExercise({ name, notes = '', loadMode = 'total', equipmentType = 'other', defaultBarId = null }) {
+export async function createExercise({ name, notes = '', loadMode = 'total', equipmentType = 'other', defaultBarId = null, catalogId = null }) {
   const exercise = {
     id: newId(),
     name: requireNonEmptyString(name, 'El nombre del ejercicio'),
@@ -150,6 +150,7 @@ export async function createExercise({ name, notes = '', loadMode = 'total', equ
     defaultBarId,
     archived: false,
     isFavorite: false,
+    catalogId,
     createdAt: new Date().toISOString(),
   };
   await db.exercises.add(exercise);

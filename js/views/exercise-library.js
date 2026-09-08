@@ -3,6 +3,7 @@ import { openSheet, openConfirmSheet } from '../core/ui.js';
 import { toast } from '../core/store.js';
 import { escapeHtml } from '../core/escape.js';
 import { navigate } from '../app.js';
+import { searchExerciseCatalog } from '../core/exercise-catalog.js';
 
 const escapeAttr = escapeHtml;
 
@@ -17,7 +18,8 @@ export async function renderExerciseLibrary(mount) {
     <button class="btn btn-ghost btn-sm" id="toggle-archived" style="margin-top:var(--space-4);">
       ${state.showArchived ? 'Ocultar archivados' : 'Ver archivados'}
     </button>
-    <button class="btn btn-primary btn-block" id="new-exercise" style="margin-top:var(--space-4);">+ Nuevo ejercicio</button>
+    <button class="btn btn-secondary btn-block" id="from-catalog" style="margin-top:var(--space-4);">Añadir desde catálogo</button>
+    <button class="btn btn-primary btn-block" id="new-exercise" style="margin-top:8px;">+ Nuevo ejercicio</button>
   `;
 
   mount.querySelector('#ex-search').addEventListener('input', (e) => {
@@ -29,6 +31,7 @@ export async function renderExerciseLibrary(mount) {
     renderExerciseLibrary(mount);
   });
   mount.querySelector('#new-exercise').addEventListener('click', () => openExerciseForm(mount));
+  mount.querySelector('#from-catalog').addEventListener('click', () => openCatalogSheet(mount));
 
   await renderList(mount);
 }
@@ -64,6 +67,84 @@ async function renderList(mount) {
       openExerciseForm(mount, ex);
     });
   });
+}
+
+// Catálogo global (exercise_catalog, solo lectura) — ver
+// js/core/exercise-catalog.js. Al elegir una ficha, crea un ejercicio propio
+// del cliente precargado (nombre), igual que "+ Nuevo ejercicio" pero sin
+// escribirlo a mano.
+function openCatalogSheet(mount) {
+  let debounceTimer = null;
+  let anadiendoId = null;
+
+  const close = openSheet(`
+    <h3 class="type-headline" style="margin-bottom:20px;">Añadir desde catálogo</h3>
+    <div class="field">
+      <input type="search" id="cat-search" placeholder="Buscar en el catálogo..." autofocus />
+    </div>
+    <div id="cat-list"></div>
+  `, {
+    onMount: (sheet) => {
+      const listEl = sheet.querySelector('#cat-list');
+
+      async function buscar(query) {
+        listEl.innerHTML = `<div class="empty-state">Buscando…</div>`;
+        const resultados = await searchExerciseCatalog(query);
+        renderResultados(resultados);
+      }
+
+      function renderResultados(resultados) {
+        if (!resultados.length) {
+          listEl.innerHTML = `<div class="empty-state">Sin resultados.</div>`;
+          return;
+        }
+        listEl.innerHTML = resultados.map((item) => `
+          <div class="grouped-row" data-id="${escapeAttr(item.id)}">
+            <div style="flex:1; min-width:0;">
+              <div class="type-body" style="font-weight:600;">${escapeHtml(item.name)}</div>
+              <div class="type-caption text-faint">${escapeHtml(item.category)}</div>
+            </div>
+            <button class="btn btn-primary btn-sm cat-add" data-id="${escapeAttr(item.id)}">Añadir</button>
+          </div>
+        `).join('');
+
+        listEl.querySelectorAll('.cat-add').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            if (anadiendoId) return;
+            const item = resultados.find((r) => r.id === id);
+            if (!item) return;
+            anadiendoId = id;
+            btn.disabled = true;
+            btn.textContent = 'Añadiendo…';
+            try {
+              await repo.createExercise({ name: item.name, catalogId: item.id });
+              await renderList(mount);
+              toast(`"${item.name}" añadido`);
+              btn.textContent = 'Añadido';
+            } catch (err) {
+              console.error('Error al añadir ejercicio del catálogo', err);
+              toast('No se ha podido añadir. Inténtalo de nuevo.');
+              btn.disabled = false;
+              btn.textContent = 'Añadir';
+            } finally {
+              anadiendoId = null;
+            }
+          });
+        });
+      }
+
+      sheet.querySelector('#cat-search').addEventListener('input', (e) => {
+        clearTimeout(debounceTimer);
+        const query = e.target.value;
+        debounceTimer = setTimeout(() => buscar(query), 250);
+      });
+
+      buscar('');
+    },
+    onClose: () => clearTimeout(debounceTimer),
+  });
+  return close;
 }
 
 async function openExerciseForm(mount, existing) {

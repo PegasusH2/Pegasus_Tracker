@@ -21,8 +21,8 @@ describe('Instalación fresca (usuario nuevo, sin datos previos)', () => {
   test('crea la base de datos directamente en la última versión sin lanzar', async () => {
     const schema = await import(`../js/db/schema.js?fresh1=${Date.now()}`);
     await schema.db.exercises.toArray(); // fuerza la apertura real
-    assert.equal(schema.SCHEMA_VERSION, 19);
-    assert.equal(schema.db.verno, 19);
+    assert.equal(schema.SCHEMA_VERSION, 20);
+    assert.equal(schema.db.verno, 20);
   });
 
   test('la tabla "syncQueue" existe y está vacía en una instalación fresca', async () => {
@@ -76,7 +76,7 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
     // ejecutando cada .upgrade() de por medio.
     const schema = await import(`../js/db/schema.js?upgrade1=${Date.now()}`);
     await schema.db.exercises.toArray();
-    assert.equal(schema.db.verno, 19);
+    assert.equal(schema.db.verno, 20);
 
     // 3) El ejercicio y el entrenamiento originales siguen ahí, intactos.
     const exercise = await schema.db.exercises.get('ex1');
@@ -89,6 +89,8 @@ describe('Actualización desde v1 (usuario con la app instalada desde el princip
     assert.equal(exercise.defaultBarId, null);
     // v10 añadió isFavorite:
     assert.equal(exercise.isFavorite, false);
+    // v20 añadió catalogId:
+    assert.equal(exercise.catalogId, null);
     // v13: ya tenía createdAt (de antes de la migración de sync) — se conserva.
     assert.ok(exercise.createdAt);
     // ...pero no tenía updatedAt: se backfillea con createdAt, no se inventa otra fecha.
