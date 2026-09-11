@@ -23,8 +23,12 @@ main.view.view--focus {
 /* Difuminado superior — mismo espíritu que el blur del bottom-nav: el
    contenido que sube bajo él se desvanece en vez de cortarse en seco contra
    el borde/notch. Fijo sobre toda la app (fuera de #view, que es quien hace
-   scroll), con mask-image para que el blur/tinte se disipe de arriba a abajo
-   en vez de aplicarse plano en todo el bloque. */
+   scroll). La franja del notch/barra de estado (var(--safe-top): batería,
+   wifi, hora) se mantiene 100% opaca y difuminada SIEMPRE, sin importar qué
+   contenido pase por detrás — el degradado hacia transparente solo empieza
+   DESPUÉS de esa franja, nunca dentro de ella (con stops en % se desvanecía
+   ya desde el primer píxel y los iconos del sistema quedaban medio tapados
+   por contenido a mitad de opacidad).*/
 .top-fade {
   position: fixed;
   top: 0;
@@ -33,11 +37,11 @@ main.view.view--focus {
   height: calc(2cm + var(--safe-top));
   z-index: 15;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
+  background: linear-gradient(to bottom, var(--bg) 0, var(--bg) var(--safe-top), transparent calc(var(--safe-top) + 2cm));
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0, black var(--safe-top), transparent calc(var(--safe-top) + 2cm));
+  mask-image: linear-gradient(to bottom, black 0, black var(--safe-top), transparent calc(var(--safe-top) + 2cm));
 }
 
 /* Nav inferior — estilo tab bar nativo */
