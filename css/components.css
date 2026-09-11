@@ -275,6 +275,25 @@
   margin-bottom: var(--space-3);
 }
 .exercise-card-header h3 { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+.exercise-card.collapsed .exercise-card-header { margin-bottom: 0; }
+.exercise-collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.exercise-collapse-toggle:active { color: var(--text); }
+.exercise-collapse-caret {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.exercise-collapse-caret.is-collapsed { transform: rotate(-90deg); }
 
 /* Deslizar el ejercicio hacia la izquierda revela el PR detrás — mismo
    patrón que .set-swipe (workout-session.js#attachExercisePrSwipe), pero a

@@ -227,63 +227,86 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
   // series de este entrenamiento, editables) vive fuera de .exercise-swipe a
   // propósito, para que nunca se oculte ni se desplace con el gesto: el
   // usuario debe poder seguir viendo/editando sus series mientras consulta el PR.
+  //
+  // Colapsado: se guarda en card.dataset.collapsed (el nodo `card` persiste
+  // entre llamadas a renderExerciseCard, solo se reemplaza su innerHTML), así
+  // que el estado sobrevive a cualquier re-render provocado por editar una
+  // serie. Minimizado solo se ve el nombre — el resto (objetivo, PR/última
+  // sesión, series de hoy, insights) se oculta con display:none en vez de no
+  // generarse, para no perder el estado de los swipes al reabrir. Por defecto
+  // (dataset sin fijar todavía, p.ej. al entrar a la sesión) empieza
+  // COLAPSADO — solo se expande explícitamente al pulsar el toggle.
+  const collapsed = card.dataset.collapsed !== 'false';
+  card.classList.toggle('collapsed', collapsed);
   card.innerHTML = `
     <div class="exercise-card-header">
-      <h3 class="ex-title-link" style="cursor:pointer;">${escapeHtml(exercise.name)}</h3>
-      <div style="display:flex; gap:6px; flex-shrink:0;">
+      <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+        <button type="button" class="exercise-collapse-toggle" aria-label="${collapsed ? 'Mostrar ejercicio' : 'Minimizar ejercicio'}">
+          <span class="exercise-collapse-caret ${collapsed ? 'is-collapsed' : ''}">▾</span>
+        </button>
+        <h3 class="ex-title-link" style="cursor:pointer; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(exercise.name)}</h3>
+      </div>
+      <div style="display:${collapsed ? 'none' : 'flex'}; gap:6px; flex-shrink:0;">
         <button class="btn btn-ghost btn-sm change-exercise">Cambiar</button>
         <button class="btn btn-ghost-danger btn-sm remove-exercise">Quitar</button>
       </div>
     </div>
-    ${targetCaption(workoutExercise)}
-    ${exercise.loadMode === 'perSide' ? `<div class="type-caption text-faint" style="margin-bottom:10px;">Peso por lado/mancuerna — la carga total se calcula ×2.</div>` : ''}
+    <div class="exercise-card-body" style="display:${collapsed ? 'none' : 'block'};">
+      ${targetCaption(workoutExercise)}
+      ${exercise.loadMode === 'perSide' ? `<div class="type-caption text-faint" style="margin-bottom:10px;">Peso por lado/mancuerna — la carga total se calcula ×2.</div>` : ''}
 
-    <div class="exercise-swipe">
-      <div class="exercise-swipe-pr">
-        <div class="type-body" style="font-weight:700; display:flex; align-items:center; gap:8px; margin-bottom:8px;"><span class="pr-trophy">${TROPHY_ICON}</span>Mejor marca</div>
-        ${records.bestWeightEntry ? `
-          <div class="stat-hero">
-            <div class="stat-hero-value">
-              <span class="type-hero">${roundForDisplay(toUnit(records.bestWeight, soloUnit), 1)}</span>
-              <span class="type-headline text-dim">${soloUnit}</span>
-            </div>
-            <div class="type-caption text-faint">${records.bestWeightEntry.set.reps} repeticiones · ${formatDate(records.bestWeightEntry.date)}</div>
-          </div>
-          <div class="row">
-            <div class="stat-tile" style="padding:0;">
-              <div class="stat-label">Peso corporal</div>
-              <div class="stat-value" style="font-size:17px;">${prBodyWeight ? formatTotal(prBodyWeight.weightKg, soloUnit) : 'No registrado'}</div>
-            </div>
-            <div class="stat-tile" style="padding:0;">
-              <div class="stat-label">Fecha</div>
-              <div class="stat-value" style="font-size:17px;">${formatDate(records.bestWeightEntry.date)}</div>
-            </div>
-          </div>
-        ` : `<div class="last-session-empty" style="display:block;">Sin PR registrado</div>`}
-      </div>
-      <div class="exercise-swipe-content">
-        ${lastEntry ? `
-          <div class="last-session">
-            <div class="section-label">Última sesión · ${relativeDays(lastEntry.workout.date)}</div>
-            ${lastSets.map((s) => `
-              <div class="last-session-set">
-                <span class="set-idx num">${s.setNumber}</span>
-                <span class="num">${weightSummary(s)} × ${s.reps ?? '—'}</span>
-                <span class="text-faint">${[s.rir != null ? `RIR ${s.rir}` : '', s.type && s.type !== 'normal' ? setTypeLabel(s.type).toUpperCase() : ''].filter(Boolean).join(' · ')}</span>
+      <div class="exercise-swipe">
+        <div class="exercise-swipe-pr">
+          <div class="type-body" style="font-weight:700; display:flex; align-items:center; gap:8px; margin-bottom:8px;"><span class="pr-trophy">${TROPHY_ICON}</span>Mejor marca</div>
+          ${records.bestWeightEntry ? `
+            <div class="stat-hero">
+              <div class="stat-hero-value">
+                <span class="type-hero">${roundForDisplay(toUnit(records.bestWeight, soloUnit), 1)}</span>
+                <span class="type-headline text-dim">${soloUnit}</span>
               </div>
-            `).join('') || '<span class="last-session-empty">Sin series registradas</span>'}
-          </div>
-        ` : `<div class="last-session-empty" style="display:block;">Primera vez que registras este ejercicio.</div>`}
+              <div class="type-caption text-faint">${records.bestWeightEntry.set.reps} repeticiones · ${formatDate(records.bestWeightEntry.date)}</div>
+            </div>
+            <div class="row">
+              <div class="stat-tile" style="padding:0;">
+                <div class="stat-label">Peso corporal</div>
+                <div class="stat-value" style="font-size:17px;">${prBodyWeight ? formatTotal(prBodyWeight.weightKg, soloUnit) : 'No registrado'}</div>
+              </div>
+              <div class="stat-tile" style="padding:0;">
+                <div class="stat-label">Fecha</div>
+                <div class="stat-value" style="font-size:17px;">${formatDate(records.bestWeightEntry.date)}</div>
+              </div>
+            </div>
+          ` : `<div class="last-session-empty" style="display:block;">Sin PR registrado</div>`}
+        </div>
+        <div class="exercise-swipe-content">
+          ${lastEntry ? `
+            <div class="last-session">
+              <div class="section-label">Última sesión · ${relativeDays(lastEntry.workout.date)}</div>
+              ${lastSets.map((s) => `
+                <div class="last-session-set">
+                  <span class="set-idx num">${s.setNumber}</span>
+                  <span class="num">${weightSummary(s)} × ${s.reps ?? '—'}</span>
+                  <span class="text-faint">${[s.rir != null ? `RIR ${s.rir}` : '', s.type && s.type !== 'normal' ? setTypeLabel(s.type).toUpperCase() : ''].filter(Boolean).join(' · ')}</span>
+                </div>
+              `).join('') || '<span class="last-session-empty">Sin series registradas</span>'}
+            </div>
+          ` : `<div class="last-session-empty" style="display:block;">Primera vez que registras este ejercicio.</div>`}
+        </div>
       </div>
+
+      <div class="section-label">Hoy</div>
+      <div class="sets-list"></div>
+      <button class="btn btn-secondary btn-sm add-set" style="margin-top:10px;">+ Añadir serie</button>
+
+      <div class="insights-box" style="margin-top:14px;"></div>
+      ${sparkValues.length >= 2 ? `<div class="sparkline-container"><canvas class="sparkline-canvas"></canvas></div>` : ''}
     </div>
-
-    <div class="section-label">Hoy</div>
-    <div class="sets-list"></div>
-    <button class="btn btn-secondary btn-sm add-set" style="margin-top:10px;">+ Añadir serie</button>
-
-    <div class="insights-box" style="margin-top:14px;"></div>
-    ${sparkValues.length >= 2 ? `<div class="sparkline-container"><canvas class="sparkline-canvas"></canvas></div>` : ''}
   `;
+
+  card.querySelector('.exercise-collapse-toggle').addEventListener('click', () => {
+    card.dataset.collapsed = collapsed ? 'false' : 'true';
+    renderExerciseCard(card, workout, exerciseId, workoutExerciseId, defaultUnit);
+  });
 
   const setsList = card.querySelector('.sets-list');
   setsList.innerHTML = currentSets.map((s) => {

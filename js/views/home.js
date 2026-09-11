@@ -41,15 +41,20 @@ export async function renderHome(mount) {
   const unit = getWeightProgressUnit();
   const quote = QUOTES[dayOfYear(today) % QUOTES.length];
 
-  const monthWorkouts = workouts.filter((w) => w.date.startsWith(monthPrefix(today)));
+  // "Tu mes" y "Entrenos" solo cuentan sesiones FINALIZADAS — un entreno
+  // empezado y sin terminar no debe sumar constancia ni aparecer como "día
+  // entrenado".
+  const completedWorkouts = workouts.filter((w) => w.completed);
+
+  const monthWorkouts = completedWorkouts.filter((w) => w.date.startsWith(monthPrefix(today)));
   const daysTrainedThisMonth = new Set(monthWorkouts.map((w) => w.date)).size;
   const daysElapsed = today.getDate();
   const constancyPct = daysElapsed ? Math.min(100, Math.round((daysTrainedThisMonth / daysElapsed) * 100)) : 0;
 
-  const trainedDates = new Set(workouts.map((w) => w.date));
+  const trainedDates = new Set(completedWorkouts.map((w) => w.date));
   const weekDays = currentWeekDates(today);
 
-  const weeklyCounts = lastWeeksCounts(workouts, today, 5);
+  const weeklyCounts = lastWeeksCounts(completedWorkouts, today, 5);
   const improvements = await getRecentImprovements(exercises, 3, unit);
   const suggestedTemplate = await getSuggestedTemplate(templates);
 
