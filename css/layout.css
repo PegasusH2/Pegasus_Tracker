@@ -30,7 +30,7 @@ main.view.view--focus {
   top: 0;
   left: 0;
   right: 0;
-  height: calc(0.5cm + var(--safe-top));
+  height: calc(1cm + var(--safe-top));
   z-index: 15;
   pointer-events: none;
   background: linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
