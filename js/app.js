@@ -161,7 +161,6 @@ export function refreshRoute() {
 function renderShell() {
   const app = document.getElementById('app');
   app.innerHTML = `
-    <div class="top-fade" aria-hidden="true"></div>
     <main class="view" id="view"></main>
     <nav class="bottom-nav" id="bottom-nav"></nav>
   `;
