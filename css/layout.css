@@ -37,8 +37,8 @@ main.view.view--focus {
   z-index: 15;
   pointer-events: none;
   background: linear-gradient(to bottom, var(--bg) 0, var(--bg) calc(var(--safe-top) - 10px), transparent calc(var(--safe-top) + 2cm));
-  -webkit-backdrop-filter: blur(15px);
-  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   -webkit-mask-image: linear-gradient(to bottom, black 0, black calc(var(--safe-top) - 10px), transparent calc(var(--safe-top) + 2cm));
   mask-image: linear-gradient(to bottom, black 0, black calc(var(--safe-top) - 10px), transparent calc(var(--safe-top) + 2cm));
 }
