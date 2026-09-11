@@ -47,7 +47,8 @@
   margin-bottom: var(--space-2);
 }
 
-/* Bloque "última sesión" — referencia discreta, nunca confundir con hoy */
+/* Bloque "última sesión" — referencia discreta, nunca confundir con hoy, pero
+   con series destacadas (no letra pequeña) para poder leerla de un vistazo. */
 .last-session {
   padding: 2px 0 var(--space-4);
   margin-bottom: var(--space-2);
@@ -55,14 +56,56 @@
 }
 .last-session-set {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-3);
-  font-size: 15px;
-  padding: 3px 0;
-  color: var(--text-secondary);
+  padding: 9px 0;
 }
-.last-session-set .set-idx { color: var(--text-tertiary); width: 20px; font-size: 12px; }
+.last-session-set-idx {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.last-session-set-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.last-session-set-value { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.last-session-set-x { font-size: 14px; color: var(--text-tertiary); }
+.last-session-set-reps { font-size: 16px; font-weight: 700; }
+.last-session-set-tag { flex-shrink: 0; font-size: 11px; padding: 3px 9px; }
 .last-session-empty { color: var(--text-tertiary); font-size: 14px; }
+
+/* Chips de "Objetivo" — antes una línea de texto pequeño, ahora badges
+   visuales a la altura de section-label, igual patrón que .badge en el resto
+   de la app. */
+.target-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.target-chips-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
 
 /* Filas de serie — lista deportiva, no tabla */
 .set-group { border-bottom: 0.5px solid var(--border); }
@@ -279,18 +322,19 @@
 .exercise-collapse-toggle {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  gap: 6px;
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.exercise-collapse-toggle:active { color: var(--text); }
+.exercise-collapse-toggle:active h3 { color: var(--text-secondary); }
 .exercise-collapse-caret {
   display: inline-block;
+  flex-shrink: 0;
+  color: var(--text-secondary);
   transition: transform 0.15s ease;
 }
 .exercise-collapse-caret.is-collapsed { transform: rotate(-90deg); }

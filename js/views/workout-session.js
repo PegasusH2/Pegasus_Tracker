@@ -240,12 +240,10 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
   card.classList.toggle('collapsed', collapsed);
   card.innerHTML = `
     <div class="exercise-card-header">
-      <div style="display:flex; align-items:center; gap:6px; min-width:0;">
-        <button type="button" class="exercise-collapse-toggle" aria-label="${collapsed ? 'Mostrar ejercicio' : 'Minimizar ejercicio'}">
-          <span class="exercise-collapse-caret ${collapsed ? 'is-collapsed' : ''}">▾</span>
-        </button>
-        <h3 class="ex-title-link" style="cursor:pointer; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(exercise.name)}</h3>
-      </div>
+      <button type="button" class="exercise-collapse-toggle" style="flex:1; min-width:0;" aria-label="${collapsed ? 'Mostrar ejercicio' : 'Minimizar ejercicio'}">
+        <span class="exercise-collapse-caret ${collapsed ? 'is-collapsed' : ''}">▾</span>
+        <h3 style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left;">${escapeHtml(exercise.name)}</h3>
+      </button>
       <div style="display:${collapsed ? 'none' : 'flex'}; gap:6px; flex-shrink:0;">
         <button class="btn btn-ghost btn-sm change-exercise">Cambiar</button>
         <button class="btn btn-ghost-danger btn-sm remove-exercise">Quitar</button>
@@ -282,13 +280,20 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
           ${lastEntry ? `
             <div class="last-session">
               <div class="section-label">Última sesión · ${relativeDays(lastEntry.workout.date)}</div>
-              ${lastSets.map((s) => `
+              ${lastSets.map((s) => {
+                const tag = [s.rir != null ? `RIR ${s.rir}` : '', s.type && s.type !== 'normal' ? setTypeLabel(s.type).toUpperCase() : ''].filter(Boolean).join(' · ');
+                return `
                 <div class="last-session-set">
-                  <span class="set-idx num">${s.setNumber}</span>
-                  <span class="num">${weightSummary(s)} × ${s.reps ?? '—'}</span>
-                  <span class="text-faint">${[s.rir != null ? `RIR ${s.rir}` : '', s.type && s.type !== 'normal' ? setTypeLabel(s.type).toUpperCase() : ''].filter(Boolean).join(' · ')}</span>
+                  <span class="last-session-set-idx">${s.setNumber}</span>
+                  <div class="last-session-set-main">
+                    <span class="last-session-set-value">${weightSummary(s)}</span>
+                    <span class="last-session-set-x">×</span>
+                    <span class="last-session-set-reps">${s.reps ?? '—'}</span>
+                  </div>
+                  ${tag ? `<span class="badge badge-neutral last-session-set-tag">${tag}</span>` : ''}
                 </div>
-              `).join('') || '<span class="last-session-empty">Sin series registradas</span>'}
+              `;
+              }).join('') || '<span class="last-session-empty">Sin series registradas</span>'}
             </div>
           ` : `<div class="last-session-empty" style="display:block;">Primera vez que registras este ejercicio.</div>`}
         </div>
@@ -656,10 +661,6 @@ async function renderExerciseCard(card, workout, exerciseId, workoutExerciseId, 
     openChangeExerciseSheet(card, workout, exerciseId, workoutExerciseId, defaultUnit);
   });
 
-  card.querySelector('.ex-title-link').addEventListener('click', () => {
-    navigate(`/entreno/ejercicio/${exerciseId}`);
-  });
-
   const insightsBox = card.querySelector('.insights-box');
   insightsBox.innerHTML = comparison && comparison.insights.length
     ? comparison.insights.map(renderInsightCallout).join('')
@@ -868,13 +869,17 @@ function attachExercisePrSwipe(card) {
 // (ver el placeholder de peso/reps y deriveDoneOnCommit más abajo).
 function targetCaption(we) {
   if (!we) return '';
-  const parts = [];
+  const chips = [];
   const reps = describeRepsTarget(we);
-  if (reps) parts.push(reps);
-  if (we.targetRir != null) parts.push(`RIR ${we.targetRir}`);
-  if (we.targetRestSeconds != null) parts.push(`${we.targetRestSeconds}s descanso`);
-  if (!parts.length) return '';
-  return `<div class="type-caption text-faint" style="margin-bottom:10px;">Objetivo: ${parts.join(' · ')}</div>`;
+  if (reps) chips.push(reps);
+  if (we.targetRir != null) chips.push(`RIR ${we.targetRir}`);
+  if (we.targetRestSeconds != null) chips.push(`${we.targetRestSeconds}s descanso`);
+  if (!chips.length) return '';
+  return `
+    <div class="target-chips">
+      <span class="target-chips-label">Objetivo</span>
+      ${chips.map((c) => `<span class="badge badge-neutral">${c}</span>`).join('')}
+    </div>`;
 }
 
 const SET_TYPE_LABELS = { normal: 'Normal', fallo: 'Fallo', restpause: 'Rest-pause', descendente: 'Descendente', amrap: 'AMRAP', pesocorporal: 'Peso corporal' };
