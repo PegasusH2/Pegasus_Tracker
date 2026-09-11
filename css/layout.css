@@ -25,9 +25,8 @@ main.view.view--focus {
    el borde/notch. Fijo sobre toda la app (fuera de #view, que es quien hace
    scroll). La franja del notch/barra de estado (var(--safe-top): batería,
    wifi, hora) se mantiene opaca y difuminada — el degradado hacia
-   transparente empieza 12px + 2mm antes del final de esa franja (para que se
-   note ya subiendo el contenido, en vez de arrancar pegado al final del
-   notch) y se disipa a lo largo de los 2cm siguientes.*/
+   transparente empieza a solo 2px del final de esa franja (pensado para el
+   notch del iPhone 15) y se disipa a lo largo de los 2cm siguientes.*/
 .top-fade {
   position: fixed;
   top: 0;
@@ -36,11 +35,11 @@ main.view.view--focus {
   height: calc(2cm + var(--safe-top));
   z-index: 15;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--bg) 0, var(--bg) calc(var(--safe-top) - 12px - 2mm), transparent calc(var(--safe-top) + 2cm));
+  background: linear-gradient(to bottom, var(--bg) 0, var(--bg) calc(var(--safe-top) - 2px), transparent calc(var(--safe-top) + 2cm));
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  -webkit-mask-image: linear-gradient(to bottom, black 0, black calc(var(--safe-top) - 12px - 2mm), transparent calc(var(--safe-top) + 2cm));
-  mask-image: linear-gradient(to bottom, black 0, black calc(var(--safe-top) - 12px - 2mm), transparent calc(var(--safe-top) + 2cm));
+  -webkit-mask-image: linear-gradient(to bottom, black 0, black calc(var(--safe-top) - 2px), transparent calc(var(--safe-top) + 2cm));
+  mask-image: linear-gradient(to bottom, black 0, black calc(var(--safe-top) - 2px), transparent calc(var(--safe-top) + 2cm));
 }
 
 /* Nav inferior — estilo tab bar nativo */
